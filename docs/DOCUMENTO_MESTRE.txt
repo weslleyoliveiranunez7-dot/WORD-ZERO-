@@ -1,1 +1,1254 @@
+WORLD ZERO DOCUMENTO MESTRE — ARQUITETURA, GAME DESIGN E PLANO DE
+IMPLEMENTAÇÃO Versão 1.0 Plataformas-alvo: Android (APK) e navegador
+(versão de teste) Repositório: GitHub Hospedagem web: GitHub Pages para
+a versão estática Servidores multiplayer: backend dedicado, separado do
+GitHub Pages
 
+======================================================================
+COMO USAR ESTE DOCUMENTO
+======================================================================
+
+Este arquivo é a especificação principal do jogo. Ele contém a visão
+completa, as regras, a arquitetura, a estrutura do projeto, os critérios
+de qualidade e as instruções para construir o jogo em etapas.
+
+IMPORTANTE PARA O CLAUDE: 1. Leia o documento inteiro antes de alterar
+qualquer arquivo. 2. Não tente construir tudo em uma única resposta ou
+commit. 3. Execute somente a PARTE solicitada pelo usuário naquele
+momento. 4. Antes de programar, inspecione o repositório existente. Não
+apague nem reescreva uma arquitetura funcional sem explicar o motivo e
+pedir aprovação. 5. Trabalhe em etapas pequenas, testáveis e
+documentadas. 6. Não entregue pseudocódigo como se fosse implementação
+concluída. 7. Não invente que multiplayer, persistência, APK ou servidor
+estão funcionando. Só marque uma função como pronta depois de executar e
+registrar os testes. 8. Preserve compatibilidade Android e controles por
+toque. 9. Prefira tecnologias gratuitas e open source, mas nunca prometa
+hospedagem 24 horas gratuita sem verificar os limites reais do provedor.
+10. Ao terminar cada etapa, entregue: - resumo do que foi feito; -
+arquivos novos e alterados, com caminhos; - comandos para testar; -
+resultado real dos testes; - problemas conhecidos; - próximo passo
+recomendado; - atualização deste documento ou de um CHANGELOG. 11. Não
+coloque chaves de API, senhas, tokens ou credenciais no APK, no código
+público ou em commits. 12. Não faça mudanças destrutivas, migrações
+irreversíveis ou publicação sem aprovação explícita do usuário.
+
+FLUXO DE TRABALHO: - O usuário envia ao Claude uma parte numerada deste
+documento. - Claude executa apenas aquela parte e verifica o
+resultado. - O usuário revisa e aprova. - Só então começa a próxima
+parte. - ChatGPT atua como arquiteto/revisor e ajuda a decidir
+correções. - Gemini pode atuar em análise de erros, testes e revisão
+adicional. - DeepSeek pode ajudar a investigar algoritmos, otimização e
+alternativas. - Claude é o implementador principal, salvo decisão
+diferente do usuário.
+
+======================================================================
+PARTE 1 — VISÃO GERAL E IDENTIDADE DO JOGO
+======================================================================
+
+1.1. CONCEITO
+
+WORLD ZERO é um jogo multiplayer de sobrevivência 2D com câmera
+top-down, inspirado em elementos de jogos de sobrevivência como Project
+Zomboid e Rust, mas com mapa, identidade visual, sistemas, nomes,
+personagens, interface, conteúdo e código originais.
+
+O jogador entra em um mundo hostil, coleta recursos, procura comida e
+água, fabrica ferramentas, constrói uma base, enfrenta zumbis, animais e
+outros jogadores, explora regiões perigosas e tenta sobreviver durante
+uma temporada de sete dias reais.
+
+O mundo continua existindo quando um jogador fecha o jogo. Outros
+jogadores podem continuar explorando, construindo, atacando e alterando
+o mundo.
+
+1.2. CONFIGURAÇÃO DEFINIDA PELO USUÁRIO
+
+-   Câmera: 2D top-down, vista de cima.
+-   Mapa: gigante, dividido em regiões e carregado por partes.
+-   Inimigos: zumbis e animais; NPCs sobreviventes podem ser adicionados
+    em fase posterior, sem bloquear o primeiro lançamento.
+-   PvP: sempre permitido, respeitando regras técnicas contra trapaças.
+-   Capacidade-alvo: até 50 jogadores simultâneos por servidor/mundo.
+-   Ciclo: servidor dura sete dias corridos, 24 horas por dia.
+-   Final do ciclo: wipe completo do progresso do mundo e início de novo
+    ciclo.
+-   Plataformas: Android APK e versão web de teste.
+-   Desenvolvimento: código versionado no GitHub e colaboração com IAs.
+-   GitHub Pages: hospedagem da versão web estática, documentação e
+    página de apresentação; não é o servidor multiplayer persistente.
+
+1.3. PILARES DO JOGO
+
+A. Sobrevivência: Fome, sede, saúde, ferimentos, temperatura/condições
+ambientais em fase posterior, inventário limitado e necessidade de
+abrigo.
+
+B. Mundo persistente: O mundo não pausa quando o jogador sai. Alterações
+importantes são salvas no servidor e recuperadas após reinicializações.
+
+C. Risco e recompensa: Áreas com recursos raros atraem jogadores e
+aumentam o risco de confronto.
+
+D. Construção: Jogadores coletam materiais e montam abrigos, depósitos,
+barricadas, portas, paredes e estruturas defensivas.
+
+E. PvP: O combate entre jogadores é parte permanente do mundo. O
+servidor valida movimento, dano, inventário, coleta e construção.
+
+F. Temporadas de sete dias: Cada temporada cria uma disputa com começo,
+meio e fim. O wipe reinicia o mundo e impede que bases antigas dominem
+temporadas futuras.
+
+1.4. ESCOPO DO PRIMEIRO JOGO COMPLETO
+
+O primeiro lançamento jogável deve conter: - tela inicial e
+criação/identificação de jogador; - lista de servidores e entrada em
+servidor; - mundo 2D com câmera seguindo o jogador; - movimentação por
+teclado e toque; - mapa dividido em chunks; - coleta de recursos; -
+inventário e equipamentos básicos; - fome, sede e vida; - ciclo de dia e
+noite; - zumbis básicos; - animais básicos; - combate corpo a corpo e
+pelo menos uma arma de distância simples; - crafting básico; -
+construção de base; - PvP validado pelo servidor; - morte e
+reaparecimento; - salvamento persistente; - limite de 50 jogadores por
+mundo; - temporada de sete dias e wipe automático; - interface mobile; -
+build Android instalável; - documentação e testes.
+
+Não tentar incluir no primeiro lançamento: - veículos complexos; -
+barcos e aviões; - centenas de armas; - sistema de clãs avançado; - NPCs
+humanos com IA complexa; - voz por proximidade; - mapa infinito sem
+limites; - loja com dinheiro real; - sistema de modificação livre pelo
+jogador. Esses itens ficam para atualizações futuras.
+
+======================================================================
+PARTE 2 — ARQUITETURA TÉCNICA
+======================================================================
+
+2.1. PRINCÍPIO DE ARQUITETURA
+
+Separar o projeto em quatro partes:
+
+1.  CLIENTE DO JOGO: Executa gráficos, áudio, interface, controles,
+    animações e apresentação. Não decide sozinho resultados importantes
+    do jogo.
+
+2.  SERVIDOR AUTORITATIVO: É a autoridade sobre posição válida, combate,
+    vida, inventário, coleta, construção, inimigos, relógio do mundo e
+    regras da temporada.
+
+3.  BANCO DE DADOS: Armazena contas, personagens, estado persistente do
+    mundo, construções, inventários, eventos e dados das temporadas.
+
+4.  HOSPEDAGEM E DISTRIBUIÇÃO: GitHub guarda o código e automatiza
+    builds. GitHub Pages publica a versão web estática. Um serviço
+    separado hospeda o servidor multiplayer e o banco.
+
+2.2. TECNOLOGIAS RECOMENDADAS
+
+Cliente: - TypeScript. - Phaser 3 para renderização e lógica visual
+2D. - Vite para desenvolvimento e build web. - HTML/CSS para telas e
+interface. - Capacitor para empacotar a aplicação web como APK Android.
+
+Servidor: - Node.js em versão LTS suportada pelo projeto. -
+TypeScript. - Colyseus para salas, conexão e sincronização
+multiplayer. - Regras de jogo executadas no servidor. - WebSocket para
+comunicação em tempo real.
+
+Persistência: - PostgreSQL para dados permanentes. - Redis opcional para
+cache, presença, filas e coordenação, se necessário. - Sistema de
+snapshots e salvamento periódico. - Armazenamento de backups separado do
+processo do jogo.
+
+Ferramentas: - Git e GitHub. - GitHub Actions para testes e builds. -
+Playwright ou ferramenta equivalente para testes de interface web. -
+Testes unitários para regras de jogo. - Android Studio/SDK para gerar e
+validar APK. - Docker para ambiente reproduzível, quando a hospedagem
+escolhida permitir.
+
+A versão exata de cada dependência deve ser escolhida e fixada no
+package.json e no lockfile. Claude deve verificar compatibilidade atual
+antes de instalar. Não usar versões aleatórias nem atualizar todas as
+dependências sem necessidade.
+
+2.3. VISÃO DA COMUNICAÇÃO
+
+Fluxo simplificado:
+
+JOGADOR ANDROID/WEB | | HTTPS: login, lista de servidores, dados de
+conta | WSS: movimento, ações e eventos multiplayer v API / GATEWAY DE
+AUTENTICAÇÃO | v SERVIDOR DE JOGO — SALA DO MUNDO | +—- valida movimento
+e velocidade +—- valida combate e dano +—- valida coleta e crafting +—-
+valida construção e permissões +—- atualiza zumbis e animais +—- salva
+eventos e snapshots | +——————–> POSTGRESQL | +——————–> REDIS (opcional)
+
+O cliente envia intenções, não resultados finais. Exemplo: o cliente
+envia “quero atacar o alvo X”; o servidor verifica distância, arma
+equipada, tempo de ataque, linha de visão, estado do jogador e alvo.
+Somente o servidor calcula e confirma o dano.
+
+2.4. ESTRUTURA DE REPOSITÓRIO SUGERIDA
+
+WORLD-ZERO/ README.md CHANGELOG.md .gitignore .env.example package.json
+pnpm-workspace.yaml docs/ DOCUMENTO_MESTRE.txt ARQUITETURA.md
+GAME_DESIGN.md PROTOCOLO_MULTIPLAYER.md SEGURANCA.md TESTES.md DEPLOY.md
+DECISOES_TECNICAS.md apps/ web/ index.html public/ src/ main.ts game/
+config/ scenes/ entities/ systems/ world/ input/ ui/ audio/ assets/
+styles/ vite.config.ts android/ capacitor.config.ts android/ server/
+src/ index.ts config/ rooms/ auth/ network/ simulation/ entities/
+systems/ world/ persistence/ seasons/ security/ monitoring/ tests/
+packages/ shared/ src/ constants/ types/ schemas/ protocol/ balance/
+game-logic/ src/ items/ crafting/ combat/ survival/ building/ loot/
+database/ migrations/ seeds/ scripts/ dev/ build/ deploy/ .github/
+workflows/ ci.yml build-web.yml build-android.yml
+
+A estrutura é uma proposta inicial. Se o repositório existente já tiver
+uma organização funcional, Claude deve adaptar a proposta sem destruir o
+projeto.
+
+2.5. MONOREPO
+
+Preferir um monorepo para compartilhar tipos e regras seguras entre
+cliente e servidor. Usar pnpm workspaces ou outra solução consistente.
+
+O pacote shared pode conter: - tipos de mensagens; - identificadores de
+itens; - definições de atributos; - schemas de validação; - constantes
+públicas; - versões do protocolo.
+
+O cliente nunca deve receber segredos nem lógica que permita manipular o
+servidor. Regras críticas devem existir e ser executadas no servidor.
+
+======================================================================
+PARTE 3 — MUNDO GIGANTE E GERAÇÃO DO MAPA
+======================================================================
+
+3.1. MAPA POR CHUNKS
+
+Não carregar o mapa inteiro na memória do celular. Dividir o mundo em
+chunks. Um chunk é uma região quadrada de tiles. Começar testando chunks
+de 32x32 ou 64x64 tiles; escolher o tamanho após medir memória,
+desempenho e tráfego.
+
+O servidor mantém os dados relevantes dos chunks próximos dos jogadores.
+O cliente recebe os chunks visíveis e uma margem para evitar
+carregamento perceptível.
+
+Cada chunk deve ter: - coordenada X/Y; - identificador do
+mundo/temporada; - terreno; - objetos estáticos; - recursos
+coletáveis; - estruturas construídas; - entidades vivas relevantes; -
+versão e data do último salvamento.
+
+3.2. TAMANHO E LIMITES
+
+“Mapa gigante” não significa mundo infinito. Para a primeira versão,
+criar um mundo grande com limites claros e expansão possível. O tamanho
+final deve ser definido por testes de desempenho, armazenamento e custo
+de hospedagem.
+
+Começar com um mapa de teste menor. Validar streaming de chunks e só
+então aumentar a dimensão. Não gerar milhares de chunks sem medir
+impacto.
+
+3.3. REGIÕES
+
+O mapa deve conter regiões com identidade e recursos próprios:
+
+-   Cidade: casas, prédios, lojas, mercados, farmácias e hospitais.
+-   Floresta: madeira, animais, pedras e locais de acampamento.
+-   Zona rural: fazendas, celeiros, plantações e poços.
+-   Zona industrial: metal, ferramentas, componentes e combustível.
+-   Área militar: recursos raros e alto risco.
+-   Estradas: conectam regiões e criam pontos de emboscada.
+-   Áreas contaminadas/perigosas: conteúdo futuro, com risco e
+    recompensa.
+
+3.4. GERAÇÃO PROCEDURAL
+
+Usar uma seed por temporada. A mesma seed deve produzir o mesmo
+mapa-base. A seed permite reproduzir bugs e validar o mundo.
+
+A geração deve seguir etapas: 1. criar terreno e biomas; 2. definir
+água, rios, lagos e obstáculos; 3. criar estradas e conexões; 4.
+posicionar cidades e pontos de interesse; 5. distribuir edifícios; 6.
+posicionar recursos; 7. definir pontos de surgimento de inimigos; 8.
+validar que as áreas são alcançáveis; 9. salvar metadados da geração.
+
+O conteúdo procedural deve ser determinístico. Construções e alterações
+dos jogadores são salvas separadamente do mapa-base.
+
+3.5. NAVEGAÇÃO
+
+O jogador precisa de: - minimapa; - mapa completo; - posição atual; -
+marcadores próprios; - nomes de regiões; - ícones de locais
+importantes; - opção de ocultar o mapa para economizar desempenho.
+
+Não mostrar automaticamente a posição de outros jogadores no mapa
+global. Isso preserva exploração e evita facilitar rastreamento.
+
+3.6. DESTRUIÇÃO E ALTERAÇÃO DO MUNDO
+
+Na primeira versão: - recursos coletáveis podem desaparecer e reaparecer
+conforme regras; - portas e janelas podem ter estados; - objetos simples
+podem ser destruídos; - estruturas construídas são persistidas; -
+alterações grandes de terreno ficam para fase futura.
+
+======================================================================
+PARTE 4 — PERSONAGEM E SOBREVIVÊNCIA
+======================================================================
+
+4.1. ATRIBUTOS
+
+Cada personagem possui: - vida; - fome; - sede; - energia/fadiga; -
+inventário; - equipamento; - estado de ferimento; - posição; - estado de
+conexão; - identificador persistente.
+
+Começar com vida, fome, sede e energia. Não implementar dezenas de
+atributos antes de testar o ciclo básico.
+
+4.2. FOME E SEDE
+
+Fome e sede diminuem com o tempo do mundo. Corrida, combate e atividades
+podem aumentar o consumo. Comer e beber recuperam os medidores conforme
+o item.
+
+Quando fome ou sede chegam a níveis críticos: - aplicar penalidades
+graduais; - reduzir recuperação; - causar dano somente após aviso e
+período de tolerância configurável.
+
+O balanceamento deve ser testado para não obrigar o jogador a ficar
+conectado sem parar. O objetivo é sobrevivência, não punição abusiva por
+desconectar.
+
+4.3. VIDA E FERIMENTOS
+
+Implementar: - dano de zumbis; - dano de animais; - dano de outros
+jogadores; - dano ambiental simples; - cura com itens; - morte; -
+reaparecimento.
+
+Fases futuras podem adicionar sangramento, fraturas, infecções e
+tratamento avançado. O sistema inicial precisa ser claro e testável.
+
+4.4. INVENTÁRIO
+
+Inventário em grade ou slots, adequado a telas pequenas. Cada item
+tem: - ID único de definição; - nome; - categoria; - peso; - quantidade
+máxima por pilha; - durabilidade, se aplicável; - propriedades; -
+ícone; - raridade apenas se fizer sentido.
+
+O servidor valida toda movimentação de item. Nunca confiar no valor de
+quantidade ou peso enviado pelo cliente.
+
+4.5. EQUIPAMENTOS
+
+Slots iniciais: - mão principal; - mão secundária, se a regra
+permitir; - roupa; - mochila.
+
+Equipamentos podem alterar capacidade, proteção ou velocidade, com
+limites claros para evitar desequilíbrio.
+
+4.6. CICLO DE DIA E NOITE
+
+O tempo é controlado pelo servidor. Todos os clientes recebem a mesma
+hora do mundo. A duração de um dia do jogo deve ser configurável. A
+primeira versão pode usar um ciclo curto para teste e um ciclo mais
+longo no servidor público.
+
+Noite: - visibilidade reduzida; - iluminação por fontes; - maior tensão
+de exploração; - regras de spawn ajustáveis por região e horário.
+
+Não fazer o relógio depender do horário do celular.
+
+======================================================================
+PARTE 5 — ITENS, COLETA, CRAFTING E CONSTRUÇÃO
+======================================================================
+
+5.1. RECURSOS INICIAIS
+
+-   madeira;
+-   pedra;
+-   fibra;
+-   sucata metálica;
+-   tecido;
+-   comida;
+-   água;
+-   remédios básicos;
+-   munição;
+-   combustível, em fase posterior.
+
+5.2. COLETA
+
+O jogador se aproxima de um recurso e solicita coleta. O servidor
+verifica: - distância; - ferramenta necessária; - quantidade
+disponível; - tempo de ação; - inventário livre; - se outro jogador já
+coletou o recurso.
+
+O servidor responde com sucesso ou motivo da recusa.
+
+5.3. CRAFTING
+
+Cada receita define: - ingredientes; - quantidades; - tempo; -
+ferramenta necessária; - resultado; - estação de trabalho, se houver.
+
+Receitas iniciais: - machado improvisado; - picareta simples; - lança; -
+tocha; - bandagem; - fogueira; - parede de madeira; - porta; - baú; -
+bancada simples.
+
+O servidor confere os ingredientes e realiza a transação de forma
+atômica: ou consome tudo e entrega o resultado, ou não altera o
+inventário.
+
+5.4. CONSTRUÇÃO
+
+Peças iniciais: - fundação; - parede; - porta; - janela/barricada; -
+baú; - fogueira; - bancada; - telhado simples, se suportado pelo sistema
+de construção escolhido.
+
+Regras: - validar posição e colisão; - impedir construção em áreas
+bloqueadas; - validar materiais; - validar distância do jogador; -
+impedir sobreposição inválida; - salvar no banco; - permitir dano e
+destruição conforme balanceamento; - impedir que uma mensagem repetida
+duplique construções.
+
+5.5. BASES E INVASÕES
+
+Como PvP é sempre permitido, bases podem ser invadidas. A primeira
+versão deve ter defesa simples e regras transparentes.
+
+Não implementar proteção invulnerável que contradiga PvP permanente.
+Pode existir custo/tempo de destruição para impedir ataques
+instantâneos.
+
+5.6. BAÚS E ARMAZENAMENTO
+
+Conteúdo de baús é persistente até o wipe. O servidor valida abertura,
+distância, permissão e transferência de itens. Evitar duplicação por
+requisições repetidas.
+
+======================================================================
+PARTE 6 — ZUMBIS, ANIMAIS E COMBATE
+======================================================================
+
+6.1. ZUMBIS
+
+Comportamentos iniciais: - ficar parado ou vagar; - detectar jogador por
+distância; - perseguir; - atacar quando próximo; - perder interesse após
+distância/tempo; - retornar a uma área de referência ou vagar
+novamente; - morrer e gerar loot configurado.
+
+A IA dos zumbis deve rodar no servidor. Não atualizar cada zumbi em
+frequência máxima se não houver jogador por perto. Usar simulação por
+proximidade e atualização em intervalos controlados.
+
+6.2. ANIMAIS
+
+Começar com poucos tipos: - animal passivo que foge; - animal que pode
+atacar quando provocado; - animal que fornece recurso quando derrotado,
+se apropriado ao design.
+
+A primeira versão pode ter apenas dois comportamentos simples. Não criar
+ecossistema complexo antes de medir o servidor.
+
+6.3. COMBATE
+
+Tipos iniciais: - ataque corpo a corpo; - ataque à distância simples; -
+dano de zumbi; - dano de animal; - PvP.
+
+O servidor valida: - distância; - direção/alcance; - cooldown; - arma; -
+munição; - linha de visão quando aplicável; - estado do atacante e do
+alvo; - velocidade de ataque permitida.
+
+O cliente pode prever animações para resposta visual, mas o resultado
+final é sempre confirmado pelo servidor. Se a previsão estiver errada,
+corrigir estado.
+
+6.4. ARMAS E FERRAMENTAS INICIAIS
+
+Começar pequeno: - ferramenta improvisada; - machado; - lança; - arma de
+fogo simples em fase seguinte; - munição limitada.
+
+Cada arma precisa de dano, alcance, velocidade, durabilidade, ruído e
+animação. Não adicionar grande catálogo sem balancear.
+
+6.5. MORTE E REAPARECIMENTO
+
+Regras iniciais sugeridas: - ao morrer, o personagem deixa uma
+mochila/caixa de loot no local; - outros jogadores podem pegar o
+conteúdo; - o jogador reaparece em um ponto válido; - equipamento e
+inventário perdidos seguem a regra da temporada; - o servidor impede
+duplicação de itens durante morte, desconexão e reconexão.
+
+O usuário deve poder entender claramente o que perde antes de entrar no
+servidor.
+
+======================================================================
+PARTE 7 — MULTIPLAYER, SERVIDORES E TEMPORADAS DE 7 DIAS
+======================================================================
+
+7.1. CAPACIDADE
+
+Cada mundo tem limite de 50 jogadores simultâneos. A capacidade real
+deve ser validada com teste de carga. Não anunciar 50 jogadores em
+produção antes de simular 50 clientes ou bots e medir CPU, memória,
+latência e estabilidade.
+
+7.2. SERVIDORES
+
+Cada servidor é um mundo independente, com: - ID; - nome; - região de
+hospedagem; - população atual; - limite de 50; - ping aproximado; -
+status; - horário de início da temporada; - horário previsto para
+wipe; - seed do mapa; - versão do jogo.
+
+A lista de servidores mostra: - nome; - jogadores online/50; - tempo
+restante da temporada; - status; - ping, quando conhecido; - regras
+principais.
+
+7.3. MUNDO PERSISTENTE
+
+O mundo continua rodando mesmo quando um jogador sai. Isso exige
+processo de servidor ativo e armazenamento persistente.
+
+O servidor deve salvar: - posição e estado dos jogadores; -
+inventário; - construções; - baús; - recursos alterados; - estado
+importante de NPCs/inimigos; - relógio do mundo; - eventos de temporada.
+
+Não é necessário salvar cada movimento em banco a cada frame. Usar
+memória para simulação e persistência periódica/event-driven, com
+estratégia contra perda de dados em falhas.
+
+7.4. TEMPORADA DE SETE DIAS
+
+O relógio da temporada é definido pelo servidor, usando UTC como
+referência interna para consistência. A interface pode mostrar o horário
+local do jogador.
+
+Cada temporada: 1. cria um novo ID; 2. define seed; 3. gera o mapa; 4.
+inicia o relógio; 5. aceita jogadores até o limite; 6. registra
+estatísticas; 7. encerra ao completar sete dias corridos; 8. bloqueia
+novas ações no mundo encerrado; 9. grava resultado final; 10.
+remove/resetta dados de gameplay daquele mundo; 11. gera a nova
+temporada e novo mapa.
+
+O wipe remove: - personagens e progresso daquele mundo; - inventários; -
+bases e construções; - baús; - recursos alterados; - estados de
+entidades; - dados temporários da temporada.
+
+Preservar somente dados de conta necessários para login e histórico
+agregado de temporadas, se aprovado: ID de conta, nome público,
+estatísticas históricas e resultados. Nenhum item ou vantagem de
+gameplay deve atravessar o wipe.
+
+7.5. SEGURANÇA DO WIPE
+
+Não apagar dados diretamente sem proteção. - usar status de temporada:
+ACTIVE, CLOSING, ARCHIVED, RESETTING, ACTIVE; - impedir novas ações
+durante fechamento; - criar snapshot/arquivo de estatísticas; - executar
+reset por transação ou procedimento idempotente; - registrar logs; -
+verificar integridade; - iniciar novo mundo somente após validação; -
+permitir recuperação de falha sem duplicar temporadas.
+
+O reset deve ser automático no backend, não depender de alguém abrir o
+jogo.
+
+7.6. DESCONEXÃO
+
+Ao desconectar: - marcar jogador offline; - persistir estado
+necessário; - remover presença após timeout; - decidir se o personagem
+permanece no mundo ou desaparece.
+
+Regra recomendada para primeira versão: personagem fica no mundo por um
+curto período configurável para evitar abuso de desconexão durante
+combate; depois fica offline e não pode ser controlado. Definir
+claramente o comportamento antes do lançamento.
+
+7.7. RECONEXÃO
+
+O jogador deve voltar ao mesmo servidor e recuperar estado salvo. Se o
+servidor cair, deve ser possível recuperar o último snapshot válido e os
+eventos persistidos desde então, dentro da política de tolerância a
+falhas.
+
+7.8. MATCHMAKING
+
+Primeira versão: - lista de servidores; - botão entrar; - recusar se
+lotado; - reconectar ao servidor anterior quando possível.
+
+Futuro: - filtro por região; - favoritos; - convite por código; -
+servidor privado; - matchmaking por ping.
+
+======================================================================
+PARTE 8 — PROTOCOLO DE REDE E SEGURANÇA
+======================================================================
+
+8.1. MENSAGENS
+
+Definir mensagens tipadas e versionadas. Exemplos conceituais:
+
+CLIENTE -> SERVIDOR: - PLAYER_INPUT - REQUEST_INTERACT -
+REQUEST_ATTACK - REQUEST_PICKUP - REQUEST_CRAFT - REQUEST_BUILD -
+REQUEST_INVENTORY_MOVE - REQUEST_USE_ITEM - REQUEST_RESPAWN
+
+SERVIDOR -> CLIENTE: - WORLD_SNAPSHOT - PLAYER_STATE - ENTITY_UPDATE -
+INVENTORY_UPDATE - COMBAT_EVENT - CHAT_EVENT, se chat for incluído -
+SERVER_NOTICE - SEASON_UPDATE - ACTION_REJECTED
+
+Claude deve definir schemas concretos com validação, tamanho máximo e
+versão. Não aceitar objetos arbitrários ou dados ilimitados enviados
+pelo cliente.
+
+8.2. AUTORIDADE
+
+O servidor é autoridade sobre: - posição final; - velocidade; - colisões
+importantes; - vida; - dano; - inventário; - loot; - crafting; -
+construção; - tempo; - spawn; - temporada.
+
+8.3. ANTI-CHEAT BÁSICO
+
+Implementar: - validação de velocidade; - validação de alcance; -
+cooldowns; - limite de mensagens; - validação de inventário; - validação
+de posição; - proteção contra duplicação; - IDs de ação idempotentes; -
+logs de ações suspeitas; - limite de tamanho de payload; - autenticação
+e autorização.
+
+Não confiar em valores de dano, velocidade, quantidade, cooldown ou
+posição calculados exclusivamente pelo cliente.
+
+8.4. AUTENTICAÇÃO
+
+Começar com login simples e seguro, com opção de conta de teste durante
+desenvolvimento. Tokens de sessão devem ter validade e ser armazenados
+de forma segura. Nunca colocar segredo administrativo ou credencial de
+banco no APK.
+
+8.5. PRIVACIDADE
+
+Coletar somente dados necessários. Não expor e-mail ou identificadores
+privados na lista de jogadores. Definir política de privacidade antes de
+distribuição pública.
+
+======================================================================
+PARTE 9 — BANCO DE DADOS E PERSISTÊNCIA
+======================================================================
+
+9.1. ENTIDADES PRINCIPAIS
+
+Tabelas sugeridas: - accounts - player_profiles - worlds - seasons -
+world_chunks - player_world_states - inventories - inventory_items -
+structures - containers - world_entities - world_events -
+season_results - server_status - audit_logs
+
+O esquema real deve ser normalizado e ajustado conforme as necessidades.
+Evitar guardar o mundo inteiro em uma única linha ou JSON gigante.
+
+9.2. CAMPOS IMPORTANTES
+
+accounts: - id; - created_at; - auth_provider; - status.
+
+player_profiles: - account_id; - public_name; - created_at; -
+cosmetic_preferences.
+
+worlds: - id; - name; - region; - capacity; - status; -
+active_season_id.
+
+seasons: - id; - world_id; - seed; - starts_at; - ends_at; - status; -
+rules_version.
+
+player_world_states: - world_id; - season_id; - account_id; -
+position; - health; - hunger; - thirst; - energy; - last_saved_at.
+
+structures: - id; - world_id; - season_id; - owner_account_id; - type; -
+position; - rotation; - health; - data; - created_at.
+
+9.3. SALVAMENTO
+
+Combinar: - salvamento periódico; - salvamento após eventos críticos; -
+snapshots de chunks; - transações para inventário e crafting; - backups
+automáticos.
+
+Definir frequência após testes. Não salvar cada frame. Não perder ações
+críticas por depender exclusivamente de um timer.
+
+9.4. RECUPERAÇÃO
+
+Após falha: 1. iniciar processo; 2. carregar temporada ativa; 3.
+carregar snapshot válido; 4. aplicar eventos posteriores ao snapshot; 5.
+validar integridade; 6. aceitar conexões; 7. registrar recuperação.
+
+======================================================================
+PARTE 10 — INTERFACE E EXPERIÊNCIA ANDROID
+======================================================================
+
+10.1. TELAS
+
+-   splash screen;
+-   menu principal;
+-   criar/entrar na conta;
+-   lista de servidores;
+-   tela de conexão;
+-   seleção/criação de personagem;
+-   jogo;
+-   inventário;
+-   crafting;
+-   construção;
+-   mapa;
+-   configurações;
+-   tela de morte;
+-   resultados da temporada.
+
+10.2. CONTROLES MOBILE
+
+-   joystick virtual à esquerda;
+-   botões de ataque/interação à direita;
+-   botão de inventário;
+-   botão de mapa;
+-   botão de correr;
+-   botão contextual de coletar/abrir;
+-   opção de ajustar posição e tamanho dos controles.
+
+Os controles devem funcionar em telas pequenas e proporções diferentes.
+Permitir ocultar botões não usados. Evitar cobrir personagem ou
+elementos críticos.
+
+10.3. CONTROLES WEB
+
+-   WASD ou setas para movimento;
+-   mouse para interface e seleção;
+-   teclas configuráveis para inventário e mapa.
+
+10.4. HUD
+
+Mostrar de forma clara: - vida; - fome; - sede; - energia; - hora do
+mundo; - nome do servidor; - tempo restante da temporada; - indicador de
+conexão; - notificações importantes.
+
+10.5. DESEMPENHO
+
+Meta inicial: - jogável em Android intermediário de entrada, com ajustes
+gráficos; - limitar efeitos e partículas; - carregar assets sob
+demanda; - descarregar chunks distantes; - reduzir atualizações de
+entidades fora da área visível; - evitar texturas gigantes; - testar em
+aparelho Android real, não apenas no navegador.
+
+O aparelho de referência do usuário é um Samsung Galaxy A04. Isso deve
+ser considerado como alvo de teste de baixo custo, sem assumir que todo
+recurso avançado funcionará nele. Criar modo de desempenho reduzido.
+
+======================================================================
+PARTE 11 — ARTE, ÁUDIO E CONTEÚDO
+======================================================================
+
+11.1. DIREÇÃO VISUAL
+
+Estilo 2D top-down legível. A direção final de pixel art, tamanho dos
+sprites, paleta e animações deve ser definida antes da produção em
+massa.
+
+Criar primeiro: - personagem temporário; - zumbi temporário; - animal
+temporário; - árvore; - pedra; - casa; - parede; - chão; - ícones de
+itens.
+
+Usar placeholders com licença adequada até os assets originais ficarem
+prontos. Não copiar sprites, mapas, nomes, sons ou materiais protegidos
+de outros jogos.
+
+11.2. ANIMAÇÕES MÍNIMAS
+
+Personagem: - parado; - andar em quatro direções; - correr; - atacar; -
+receber dano; - morrer.
+
+Zumbi: - parado; - andar; - perseguir; - atacar; - receber dano; -
+morrer.
+
+Animal: - parado; - andar; - fugir ou atacar; - morrer.
+
+11.3. ÁUDIO
+
+-   ambiente de floresta/cidade;
+-   passos;
+-   coleta;
+-   construção;
+-   ataque;
+-   dano;
+-   zumbis;
+-   notificações de interface.
+
+Permitir controlar volume e desligar áudio.
+
+======================================================================
+PARTE 12 — HOSPEDAGEM, GITHUB E APK
+======================================================================
+
+12.1. PAPEL DO GITHUB
+
+GitHub será usado para: - armazenar código; - histórico de alterações; -
+issues e tarefas; - documentação; - revisão de mudanças; - GitHub
+Actions; - geração automatizada de builds.
+
+12.2. PAPEL DO GITHUB PAGES
+
+GitHub Pages pode hospedar: - página de apresentação; - versão web
+estática do cliente; - arquivos públicos do frontend; - documentação.
+
+GitHub Pages NÃO hospeda: - processo Node.js contínuo; - servidor
+Colyseus; - banco PostgreSQL; - mundo multiplayer rodando 24/7; -
+tarefas de wipe que precisam executar sem usuário conectado.
+
+Não tentar usar Pages como servidor de jogo.
+
+12.3. BACKEND
+
+Escolher hospedagem que suporte: - processo Node.js persistente; -
+WebSocket; - conexões simultâneas; - armazenamento persistente; -
+variáveis de ambiente; - backups; - monitoramento.
+
+Serviços gratuitos podem dormir, limitar uso ou encerrar processos.
+Fazer uma tabela de opções atualizada na época do deploy e verificar: -
+horas gratuitas; - política de suspensão; - memória e CPU; - limite de
+conexões; - tráfego; - armazenamento; - região; - suporte a WebSocket; -
+persistência de disco; - custo quando o limite for excedido.
+
+Se nenhuma opção gratuita garantir 24/7, informar isso claramente.
+Desenvolver localmente e testar com plano gratuito é possível, mas o
+servidor público persistente pode exigir hospedagem paga ou servidor
+próprio.
+
+12.4. APK
+
+Fluxo esperado: 1. construir cliente web; 2. validar build; 3.
+sincronizar com Capacitor; 4. abrir projeto Android; 5. configurar
+identificador do aplicativo; 6. gerar APK debug para testes; 7. instalar
+em aparelho real; 8. testar conexão e controles; 9. gerar APK release
+assinado quando aprovado.
+
+A chave de assinatura release deve ficar fora do Git e protegida. Nunca
+comprometer keystore ou senha no repositório.
+
+12.5. CI/CD
+
+GitHub Actions deve: - instalar dependências pelo lockfile; - executar
+lint; - executar testes; - construir cliente web; - verificar tipos; -
+opcionalmente gerar artefato APK debug; - publicar Pages somente após
+aprovação/configuração.
+
+Não publicar automaticamente uma versão instável no servidor público.
+
+======================================================================
+PARTE 13 — TESTES E CRITÉRIOS DE ACEITAÇÃO
+======================================================================
+
+13.1. TESTES UNITÁRIOS
+
+Testar: - fome e sede; - dano; - cooldown; - inventário; - crafting; -
+coleta; - construção; - regras de loot; - relógio; - cálculo de fim da
+temporada; - transição de wipe.
+
+13.2. TESTES DE INTEGRAÇÃO
+
+Testar: - cliente conecta; - jogador entra no mundo; - movimento é
+sincronizado; - coleta altera o estado; - inventário é salvo; - jogador
+desconecta; - jogador reconecta; - construção continua existindo; -
+servidor reinicia e recupera estado; - wipe encerra e cria nova
+temporada.
+
+13.3. TESTES MULTIPLAYER
+
+Começar com 2 jogadores, depois 5, 10, 25 e 50. Usar bots de teste para
+gerar carga. Medir: - CPU; - memória; - latência; - mensagens por
+segundo; - tráfego; - atraso de sincronização; - quedas; - consistência
+de estado.
+
+50 jogadores é meta de capacidade, não garantia antes dos testes.
+
+13.4. TESTES ANDROID
+
+Testar: - instalação; - primeira abertura; - rotação/orientação; - toque
+simultâneo; - joystick; - reconexão após trocar de aplicativo; - consumo
+de memória; - aquecimento; - consumo de bateria; - rede Wi-Fi e móvel; -
+telas pequenas.
+
+13.5. CRITÉRIOS PARA DECLARAR O MVP PRONTO
+
+O MVP só pode ser chamado de pronto quando: - o jogador consegue iniciar
+e entrar em um servidor; - dois ou mais jogadores se veem e se
+movimentam sincronizados; - o servidor rejeita movimento impossível; -
+coleta e inventário funcionam; - combate funciona com validação no
+servidor; - zumbis perseguem e atacam; - animais têm comportamento
+funcional; - crafting e construção funcionam; - dados persistem após
+sair e voltar; - servidor recupera estado após reinício; - relógio de
+temporada é consistente; - wipe de sete dias foi testado em ambiente de
+teste; - cliente Android instala e joga; - testes básicos passam; -
+limitações conhecidas estão documentadas.
+
+======================================================================
+PARTE 14 — ROADMAP DE IMPLEMENTAÇÃO EM ETAPAS
+======================================================================
+
+REGRA: executar uma etapa por vez. Não pular para a próxima sem teste e
+aprovação.
+
+ETAPA 0 — AUDITORIA DO REPOSITÓRIO Objetivo: Entender o que já existe
+antes de programar.
+
+Tarefas: - verificar branch e status do Git; - ler README e
+package.json; - identificar framework e estrutura; - localizar assets; -
+verificar workflows; - identificar o que já funciona; - listar riscos e
+incompatibilidades; - propor plano de adaptação.
+
+Entrega: Relatório de auditoria, sem apagar ou reescrever arquivos.
+
+ETAPA 1 — FUNDAÇÃO DO PROJETO Objetivo: Criar ou ajustar monorepo,
+TypeScript, Vite, Phaser e scripts.
+
+Tarefas: - configurar workspaces; - criar cliente web; - criar servidor
+inicial; - criar pacote shared; - configurar lint e testes; - criar
+.env.example; - documentar comandos.
+
+Aceite: Cliente abre uma tela simples e servidor inicia sem erro.
+
+ETAPA 2 — PRIMEIRO MAPA 2D Objetivo: Ter personagem andando em um mapa
+de teste.
+
+Tarefas: - cena principal; - câmera top-down; - colisões; - tiles
+temporários; - carregamento de mapa; - teclado; - joystick mobile
+inicial.
+
+Aceite: Personagem anda, colide e câmera acompanha.
+
+ETAPA 3 — MAPA EM CHUNKS Objetivo: Preparar mundo grande sem carregar
+tudo de uma vez.
+
+Tarefas: - coordenadas; - geração determinística; - carregar chunks
+próximos; - descarregar chunks distantes; - regiões básicas; - minimapa
+inicial.
+
+Aceite: Jogador atravessa vários chunks sem travar e sem perder posição.
+
+ETAPA 4 — SERVIDOR MULTIPLAYER Objetivo: Dois jogadores no mesmo mundo.
+
+Tarefas: - conexão WebSocket; - sala Colyseus; - entrada e saída; -
+sincronização; - interpolação visual; - reconexão inicial; - limite
+configurável de jogadores.
+
+Aceite: Dois aparelhos/navegadores veem os mesmos jogadores e
+movimentos.
+
+ETAPA 5 — AUTORIDADE E SEGURANÇA Objetivo: Mover regras críticas para o
+servidor.
+
+Tarefas: - validar velocidade; - validar colisões importantes; - validar
+mensagens; - limitar frequência; - registrar erros; - impedir
+manipulação básica do cliente.
+
+Aceite: Cliente não consegue impor posição ou ação inválida.
+
+ETAPA 6 — PERSONAGEM E SOBREVIVÊNCIA Objetivo: Criar ciclo básico de
+sobrevivência.
+
+Tarefas: - vida; - fome; - sede; - energia; - inventário; - itens
+consumíveis; - morte e reaparecimento.
+
+Aceite: Estado é atualizado e validado pelo servidor.
+
+ETAPA 7 — COLETA E LOOT Objetivo: Explorar e coletar recursos.
+
+Tarefas: - árvores; - pedras; - sucata; - loot de edifícios; - regras de
+respawn; - validação de distância; - inventário persistente.
+
+Aceite: Dois jogadores não conseguem coletar o mesmo recurso além da
+quantidade disponível.
+
+ETAPA 8 — ZUMBIS E ANIMAIS Objetivo: Adicionar ameaças PvE.
+
+Tarefas: - IA simples no servidor; - percepção; - perseguição; -
+ataque; - dano; - morte; - loot; - otimização por proximidade.
+
+Aceite: Inimigos funcionam com mais de um jogador na área sem duplicar
+estado.
+
+ETAPA 9 — COMBATE E PvP Objetivo: Permitir confronto entre jogadores.
+
+Tarefas: - ataque corpo a corpo; - arma simples; - cooldown; - dano; -
+morte; - loot; - validação de alcance; - feedback visual.
+
+Aceite: O servidor decide o resultado e impede dano fora das regras.
+
+ETAPA 10 — CRAFTING Objetivo: Transformar recursos em ferramentas e
+itens.
+
+Tarefas: - receitas; - interface; - validação; - transações; -
+ferramentas; - itens de cura; - bancada simples.
+
+Aceite: Não é possível duplicar itens por mensagens repetidas.
+
+ETAPA 11 — CONSTRUÇÃO DE BASE Objetivo: Permitir criar abrigo e guardar
+itens.
+
+Tarefas: - fundação; - paredes; - portas; - baús; - posicionamento; -
+colisão; - dano estrutural; - persistência.
+
+Aceite: Base permanece após desconexão e reinício do servidor.
+
+ETAPA 12 — BANCO E PERSISTÊNCIA COMPLETA Objetivo: Garantir recuperação
+do mundo.
+
+Tarefas: - PostgreSQL; - migrações; - salvamento periódico; - eventos
+críticos; - snapshots; - recuperação; - backup.
+
+Aceite: Reiniciar servidor não apaga progresso confirmado.
+
+ETAPA 13 — SERVIDORES E LISTA Objetivo: Gerenciar mundos separados.
+
+Tarefas: - cadastro de mundos; - limite de 50; - lista de servidores; -
+status; - população; - conexão; - servidor lotado; - reconexão.
+
+Aceite: Jogadores entram no mesmo mundo e não ultrapassam o limite.
+
+ETAPA 14 — TEMPORADA DE SETE DIAS Objetivo: Ciclo persistente com wipe
+automático.
+
+Tarefas: - relógio de backend; - início e fim; - alertas de tempo; -
+encerramento; - arquivamento; - wipe; - nova seed; - novo mundo; -
+testes com relógio acelerado em ambiente de teste.
+
+Aceite: O wipe ocorre sem depender de jogador conectado e sem apagar
+contas.
+
+ETAPA 15 — INTERFACE E POLIMENTO MOBILE Objetivo: Tornar o jogo
+utilizável no celular.
+
+Tarefas: - HUD; - inventário; - mapa; - crafting; - construção; -
+menus; - controles configuráveis; - acessibilidade; - otimização.
+
+Aceite: Fluxo completo pode ser jogado em tela Android pequena.
+
+ETAPA 16 — APK E GITHUB PAGES Objetivo: Distribuir versão Android e web.
+
+Tarefas: - Capacitor; - configuração Android; - build web; - APK
+debug; - instalação; - GitHub Actions; - Pages; - documentação de
+deploy.
+
+Aceite: APK instala e conecta a um backend de teste. Pages abre o
+cliente web.
+
+ETAPA 17 — TESTE DE CARGA E LANÇAMENTO Objetivo: Validar estabilidade
+antes de abrir ao público.
+
+Tarefas: - simular 50 jogadores; - corrigir gargalos; - validar
+backups; - monitorar erros; - testar wipe; - revisar segurança; -
+publicar versão candidata; - plano de rollback.
+
+Aceite: Relatório real de teste, sem alegações não verificadas.
+
+======================================================================
+PARTE 15 — REGRAS DE QUALIDADE E DECISÕES
+======================================================================
+
+-   Não criar um servidor multiplayer falso que apenas simula jogadores
+    localmente.
+-   Não chamar de persistente um mundo que some quando o processo
+    encerra.
+-   Não usar localStorage como banco de dados oficial do multiplayer.
+-   Não confiar no relógio do celular para temporada.
+-   Não confiar no cliente para decidir dano, loot ou inventário.
+-   Não prometer 50 jogadores sem teste.
+-   Não usar GitHub Pages como backend.
+-   Não adicionar serviço pago sem explicar custo e pedir aprovação.
+-   Não trocar tecnologia central sem justificar benefícios e riscos.
+-   Não colocar tokens em arquivos versionados.
+-   Não adicionar assets sem verificar licença.
+-   Não apagar arquivos existentes sem aprovação.
+-   Não misturar lógica visual com regras autoritativas do servidor.
+-   Manter o projeto executável ao final de cada etapa.
+-   Atualizar documentação e changelog.
+-   Preferir soluções simples que possam ser mantidas por uma equipe
+    pequena.
+
+======================================================================
+PARTE 16 — PROMPTS PRONTOS PARA O CLAUDE
+======================================================================
+
+PROMPT GERAL — ENVIAR PRIMEIRO
+
+“Você é o engenheiro principal responsável por implementar WORLD ZERO.
+Leia integralmente o Documento Mestre. Primeiro, audite o repositório
+atual. Não comece construindo todas as funcionalidades. Não apague
+arquitetura existente. Respeite a arquitetura, as regras de jogo, a
+segurança e o roadmap do documento. Trabalhe somente na etapa que eu
+solicitar. Faça alterações pequenas e testáveis. Ao final, informe
+arquivos criados/alterados, comandos executados, testes reais,
+resultado, limitações e próximo passo. Nunca afirme que algo funciona
+sem testar. Não coloque segredos no código. O jogo precisa ser Android e
+web, com backend autoritativo persistente, 50 jogadores por mundo como
+meta e wipe de sete dias.”
+
+PROMPT ETAPA 0 — AUDITORIA
+
+“Execute somente a ETAPA 0 do Documento Mestre WORLD ZERO. Inspecione o
+repositório existente, identifique tecnologias, estrutura, arquivos,
+builds, workflows e funcionalidades já existentes. Não altere nem apague
+arquivos. Entregue diagnóstico, riscos, o que pode ser reaproveitado e
+plano da Etapa 1.”
+
+PROMPT ETAPA 1 — FUNDAÇÃO
+
+“Execute somente a ETAPA 1 do Documento Mestre WORLD ZERO, respeitando o
+resultado da auditoria. Configure a fundação do projeto e prove que o
+cliente web abre e o servidor inicia. Não implemente sistemas de
+gameplay ainda.”
+
+PROMPT ETAPA 2 — MOVIMENTAÇÃO
+
+“Execute somente a ETAPA 2. Crie a primeira cena 2D top-down, personagem
+temporário, câmera, colisão, teclado e controles touch iniciais. Teste
+no navegador e documente o que ainda falta no Android.”
+
+PROMPT ETAPA 3 — CHUNKS
+
+“Execute somente a ETAPA 3. Implemente mapa por chunks e geração
+determinística. Faça primeiro um mapa de teste pequeno, meça desempenho
+e prove carregamento e descarregamento antes de ampliar o mundo.”
+
+PROMPT ETAPA 4 — MULTIPLAYER
+
+“Execute somente a ETAPA 4. Crie sala multiplayer real com servidor
+autoritativo e dois clientes de teste. Não simule multiplayer
+localmente. Prove que dois clientes separados se conectam e veem o mesmo
+estado.”
+
+PROMPT ETAPA 5 — SEGURANÇA
+
+“Execute somente a ETAPA 5. Valide movimento, mensagens, frequência e
+ações no servidor. Crie testes que tentem enviar posição e ações
+inválidas.”
+
+PROMPT ETAPA 6 — SOBREVIVÊNCIA
+
+“Execute somente a ETAPA 6. Implemente vida, fome, sede, energia,
+inventário, consumo de itens, morte e reaparecimento com autoridade no
+servidor.”
+
+PROMPT ETAPA 7 — COLETA
+
+“Execute somente a ETAPA 7. Implemente recursos coletáveis, loot e
+persistência de inventário. Teste concorrência entre dois jogadores para
+evitar coleta duplicada.”
+
+PROMPT ETAPA 8 — INIMIGOS
+
+“Execute somente a ETAPA 8. Implemente zumbis e animais com IA simples
+no servidor, percepção, perseguição, ataque, dano e otimização por
+proximidade.”
+
+PROMPT ETAPA 9 — PvP
+
+“Execute somente a ETAPA 9. Implemente combate PvP validado no servidor,
+cooldowns, alcance, dano, morte e loot. Teste tentativas de ataque
+inválido.”
+
+PROMPT ETAPA 10 — CRAFTING
+
+“Execute somente a ETAPA 10. Implemente receitas, ferramentas e itens
+básicos. Garanta que consumir ingredientes e entregar resultados seja
+uma operação atômica e protegida contra repetição.”
+
+PROMPT ETAPA 11 — BASES
+
+“Execute somente a ETAPA 11. Implemente construção de fundações,
+paredes, portas e baús, com colisão, validação, dano e persistência.”
+
+PROMPT ETAPA 12 — BANCO
+
+“Execute somente a ETAPA 12. Configure PostgreSQL, migrações,
+salvamento, snapshots, recuperação e backups. Teste reinício do processo
+e recuperação.”
+
+PROMPT ETAPA 13 — SERVIDORES
+
+“Execute somente a ETAPA 13. Implemente mundos independentes, lista de
+servidores, população, limite máximo de 50 jogadores, status e entrada.”
+
+PROMPT ETAPA 14 — WIPE
+
+“Execute somente a ETAPA 14. Implemente temporada de sete dias usando
+relógio do backend, encerramento, arquivamento, wipe de dados de
+gameplay e criação de nova temporada. Primeiro use relógio acelerado em
+ambiente de teste. Não apague contas nem dados históricos aprovados.”
+
+PROMPT ETAPA 15 — MOBILE
+
+“Execute somente a ETAPA 15. Finalize HUD e interfaces mobile, controles
+configuráveis e modo de desempenho reduzido. Teste em Android real.”
+
+PROMPT ETAPA 16 — APK E PAGES
+
+“Execute somente a ETAPA 16. Configure Capacitor, build Android, APK
+debug, GitHub Actions e GitHub Pages. Explique claramente que Pages
+hospeda o cliente, não o servidor multiplayer. Não publique release sem
+aprovação.”
+
+PROMPT ETAPA 17 — CARGA
+
+“Execute somente a ETAPA 17. Faça teste de carga progressivo até 50
+clientes simulados, registre CPU, memória, latência, erros e
+estabilidade. Não declare capacidade de 50 se os testes não
+comprovarem.”
+
+======================================================================
+PARTE 17 — DEFINIÇÃO DO PRIMEIRO PROTÓTIPO
+======================================================================
+
+O primeiro protótipo não precisa ter o mapa gigante nem todas as
+mecânicas. Ele precisa provar que a base técnica é real.
+
+Protótipo 1: - tela de jogo; - personagem top-down; - mapa pequeno; -
+câmera; - colisões; - teclado e toque; - servidor real; - dois jogadores
+conectados; - sincronização de movimento.
+
+Protótipo 2: - chunks; - inventário; - coleta; - fome e sede; -
+persistência.
+
+Protótipo 3: - zumbis; - animais; - combate; - crafting; - construção.
+
+Protótipo 4: - lista de servidores; - limite 50; - temporadas; - wipe; -
+APK; - teste de carga.
+
+A ordem evita gastar tempo criando conteúdo sobre uma arquitetura
+multiplayer que ainda não foi comprovada.
+
+======================================================================
+PARTE 18 — CHECKLIST DE CONCLUSÃO
+======================================================================
+
+[ ] Repositório auditado [ ] Arquitetura aprovada [ ] Cliente web
+executável [ ] Servidor executável [ ] Personagem 2D [ ] Controles
+Android [ ] Mapa em chunks [ ] Multiplayer real [ ] Autoridade do
+servidor [ ] Vida/fome/sede [ ] Inventário [ ] Coleta [ ] Zumbis [ ]
+Animais [ ] PvP [ ] Crafting [ ] Construção [ ] PostgreSQL [ ]
+Persistência [ ] Recuperação após reinício [ ] Lista de servidores [ ]
+Limite de 50 testado [ ] Temporada de sete dias [ ] Wipe testado [ ]
+Interface mobile [ ] APK debug instalado [ ] GitHub Pages publicado [ ]
+Testes de carga [ ] Documentação atualizada [ ] Versão candidata
+revisada
+
+======================================================================
+RESUMO FINAL
+======================================================================
+
+WORLD ZERO será um jogo 2D top-down de sobrevivência multiplayer, com
+mapa gigante dividido em chunks, zumbis, animais, PvP sempre ativo,
+construção, coleta, crafting, inventário e servidores persistentes de
+até 50 jogadores.
+
+Cada servidor terá temporadas de sete dias corridos, com wipe completo
+do progresso de gameplay ao final. Contas e histórico agregado podem
+permanecer, mas nenhum item, base ou vantagem de jogo passa para a
+próxima temporada.
+
+O cliente será feito com Phaser 3 e TypeScript, empacotado para Android
+com Capacitor. O multiplayer será executado em backend Node.js/Colyseus,
+com PostgreSQL para persistência. GitHub Pages hospedará somente a
+versão estática web e a página do projeto. O backend precisa de
+hospedagem própria compatível com processos persistentes e WebSocket.
+
+A implementação será feita em 18 etapas, começando pela auditoria do
+repositório e terminando com teste de carga, APK e publicação. Claude
+executa uma etapa por vez, com testes e aprovação entre etapas.
+
+FIM DO DOCUMENTO MESTRE WORLD ZERO
