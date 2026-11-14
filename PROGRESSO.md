@@ -4,7 +4,7 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 1 (Fundação) - código escrito, NÃO testado**
+Etapa atual: **Etapa 2 (Primeiro mapa 2D) - código escrito; lógica testada, tela ainda não conferida no celular**
 
 ## Regras que valem sempre (resumo do Documento Mestre)
 - Executar UMA etapa por vez; só avançar após teste e aprovação do usuário.
@@ -15,12 +15,19 @@ Etapa atual: **Etapa 1 (Fundação) - código escrito, NÃO testado**
 - Entregar projeto em pastas `parte-1`, `parte-2`... com menos de 100 arquivos cada (limite do upload do GitHub).
 - Ao fim de cada etapa: resumo, arquivos novos/alterados, comandos, resultado real dos testes, problemas, próximo passo, este arquivo atualizado.
 
+## Regra de entrega por etapa (importante)
+O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-ZERO-etapaN.zip` com **somente os arquivos novos ou alterados**, dentro de uma pasta raiz `WORLD-ZERO/` (mesmos caminhos do repositório). O workflow `Verificar` descompacta por cima do repositório, testa e commita.
+- Arquivos em `.github/` NÃO vão no zip (o workflow ignora); o usuário edita esses à mão, e o arquivo é entregue separado (`verificar.yml`).
+- Arquivos que forem APAGADOS não somem com o zip: listar para o usuário apagar à mão.
+- Sempre incluir no zip o `PROGRESSO.md`, o `CHANGELOG.md` e o que mais mudou.
+- Lista dos arquivos da etapa fica na seção "Arquivos desta etapa" abaixo.
+
 ## Etapas
 | Etapa | Descrição | Status |
 |---|---|---|
 | 0 | Auditoria do repositório | Concluída (não havia repositório; nada a auditar) |
-| 1 | Fundação (monorepo, Vite, Phaser, Colyseus, CI) | Escrita, aguardando teste do usuário |
-| 2 | Primeiro mapa 2D (personagem, câmera, colisão, teclado, joystick) | Pendente |
+| 1 | Fundação (monorepo, Vite, Phaser, Colyseus, CI) | Concluída (workflow Verificar passou) |
+| 2 | Primeiro mapa 2D (personagem, câmera, colisão, teclado, joystick) | Escrita; falta conferir visualmente no celular |
 | 3 | Mapa em chunks | Pendente |
 | 4 | Servidor multiplayer (2 jogadores) | Pendente |
 | 5 | Autoridade e segurança | Pendente |
@@ -41,10 +48,54 @@ Etapa atual: **Etapa 1 (Fundação) - código escrito, NÃO testado**
 Arquivos criados (todos em `parte-1/`, que é a raiz do repositório):
 - Raiz: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `.gitignore`, `.env.example`, `README.md`, `CHANGELOG.md`, `PROGRESSO.md`
 - `docs/`: `DOCUMENTO_MESTRE.txt`, `DECISOES_TECNICAS.md`
-- `.github/workflows/ci.yml`
+- `.github/workflows/verificar.yml` (GitHub Actions: instala, typecheck, testes, build web, liga o servidor e consulta /health, salva o pnpm-lock.yaml)
 - `packages/shared/`: constantes, nomes das mensagens, 1 teste vitest
 - `apps/server/`: Colyseus + Express, sala `world` (50 máx.), `GET /health`, config por variáveis de ambiente
 - `apps/web/`: Vite + Phaser 3, `BootScene` que mostra o título e consulta `/health`
+
+## O que já foi feito (Etapa 2)
+- `packages/shared/src/map.ts`: tiles (grama, muro, água, árvore), `TileMap`, `createTestMap()` (40x30 tiles de 32 px, determinístico, com lago, muro com porta e árvores).
+- `packages/shared/src/movement.ts`: `inputToVelocity` (diagonal não é mais rápida), `collidesAt`, `moveWithCollision` (caixa 20x20, move um eixo por vez, desliza em paredes, passo limitado a 0,05 s). Fica no shared porque o servidor vai reusar na Etapa 5.
+- `packages/shared/src/movement.test.ts`: 12 testes (diagonal, parede, borda do mundo, deslizar, porta, lago, passo grande).
+- `apps/web/src/game/GameScene.ts`: desenha o mapa, personagem temporário (círculo amarelo), câmera que segue com zoom ~10 tiles no lado menor da tela, teclado WASD/setas, HUD com FPS e tile.
+- `apps/web/src/ui/VirtualJoystick.ts`: joystick flutuante (toque na metade esquerda de baixo; só em dispositivos touch; `?joystick=1` força no PC).
+- `apps/web/src/game/BootScene.ts`: botão "JOGAR (mapa de teste)", status do servidor é opcional.
+- Workflow `verificar.yml`: agora aceita qualquer `WORLD-ZERO-*.zip` e publica o cliente no GitHub Pages (job `publicar`, exige Settings > Pages > Source = GitHub Actions).
+
+## Arquivos desta etapa (Etapa 2) - vão no `WORLD-ZERO-etapa2.zip`
+Novos:
+- `packages/shared/src/map.ts`
+- `packages/shared/src/movement.ts`
+- `packages/shared/src/movement.test.ts`
+- `apps/web/src/game/GameScene.ts`
+- `apps/web/src/ui/Hud.ts`
+- `apps/web/src/ui/VirtualJoystick.ts`
+Alterados:
+- `packages/shared/src/index.ts`
+- `apps/web/src/game/BootScene.ts`
+- `apps/web/src/main.ts`
+- `PROGRESSO.md`, `CHANGELOG.md`, `README.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (nova versão com aceite de `WORLD-ZERO-*.zip` e job `publicar`).
+Apagados: nenhum.
+
+## Verificado e não verificado (Etapa 2)
+- Verificado: os 14 testes de `shared` (incluindo os 12 de movimento) passaram rodando em Node 22 com um shim do vitest. O workflow `Verificar` ainda vai confirmar com vitest/tsc de verdade.
+- NÃO verificado: typecheck e build do código do cliente (Phaser/Vite), a aparência da tela, o toque do joystick em celular real, o desempenho no A04.
+
+## O que ainda falta para Android (Etapa 2)
+- Capacitor/APK não configurado (Etapa 16); por enquanto só navegador do celular via GitHub Pages.
+- Botões de ataque/interação/inventário/correr (Etapa 6 em diante) e ajuste de posição/tamanho dos controles.
+- Medir FPS e consumo no A04 e decidir zoom/tamanho do joystick depois do teste real.
+- Orientação da tela (retrato/paisagem) e reconexão ao voltar para o app (Etapas 4 e 16).
+
+## Como o usuário testa (sem computador)
+O usuário NÃO tem computador. O teste é feito pelo GitHub Actions (workflow `Verificar`), pelo celular: aba Actions do repositório, ver o resumo da execução. Se algo falhar, ele cola o erro do log no chat.
+O próprio workflow descompacta qualquer `WORLD-ZERO-*.zip` (ex.: `WORLD-ZERO-etapa2.zip`) se ele estiver na raiz do repositório (o workflow foi criado à mão pelo usuário, pois o GITHUB_TOKEN não pode criar arquivos em `.github/workflows`).
+
+## Histórico de testes no GitHub Actions
+- Execução 1: falhou no `pnpm/action-setup` (versão do pnpm declarada duas vezes). Corrigido removendo `version: 9` do workflow.
+- Execução 2: instalar, tipos, testes e build web passaram; servidor falhou com `colyseus does not provide an export named 'Room'` (módulo CommonJS importado em ESM). Corrigido removendo `"type": "module"` de `apps/server/package.json` e `packages/shared/package.json`.
+- Execução 3: tudo passou (instalar, tipos, testes, build web, servidor /health). Etapa 1 concluída.
 
 ## O que NÃO foi verificado (importante)
 O ambiente onde o código foi escrito não tinha acesso à internet, então:
@@ -53,18 +104,17 @@ O ambiente onde o código foi escrito não tinha acesso à internet, então:
 - A compatibilidade exata entre Colyseus 0.15, `@colyseus/ws-transport` e Express é suposição baseada na documentação; confirme ao rodar.
 - ESLint ainda não foi configurado.
 
-## Critério de aceite da Etapa 1
-Cliente abre uma tela simples e o servidor inicia sem erro. Só marcar como concluída depois de:
-1. `pnpm install` sem erros e `pnpm-lock.yaml` commitado.
-2. `pnpm typecheck` e `pnpm test` passando.
-3. `pnpm dev:server` mostra "WORLD ZERO ouvindo na porta 2567" e `http://localhost:2567/health` responde `{"status":"ok",...}`.
-4. `pnpm dev:web` abre a tela e mostra "Servidor: online".
-Se algo falhar, copie a mensagem de erro e corrija antes da Etapa 2.
+## Critério de aceite da Etapa 1 (concluída)
+Cliente abre uma tela simples e o servidor inicia sem erro. Só marcar como concluída depois que o workflow `Verificar` mostrar tudo como `success` (instalar, tipos, testes, build web, servidor/health). A conferência visual da tela do cliente ("Servidor: online") ainda não é coberta pelo workflow.
+Se algo falhar, corrigir antes da Etapa 2.
+
+## Critério de aceite da Etapa 2
+Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois que: (1) o workflow `Verificar` passar e (2) o usuário abrir o jogo publicado no GitHub Pages, tocar em JOGAR e confirmar que anda com o joystick, colide com muro/lago/árvore, atravessa a porta e a câmera acompanha.
 
 ## Próximo passo
-1. Usuário roda os 4 itens acima e informa o resultado (ou os erros).
-2. Corrigir o que falhar e então marcar a Etapa 1 como concluída aqui.
-3. Iniciar a Etapa 2 (primeiro mapa 2D). Prompt pronto: Parte 16 do Documento Mestre, "PROMPT ETAPA 2".
+1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
+2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
+3. Etapa 3 (mapa em chunks). Prompt: Parte 16 do Documento Mestre, "PROMPT ETAPA 3".
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.

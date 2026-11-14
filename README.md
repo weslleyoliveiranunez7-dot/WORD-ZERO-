@@ -2,7 +2,7 @@
 
 Jogo multiplayer de sobrevivência 2D top-down (Android + web). Especificação completa em `docs/DOCUMENTO_MESTRE.txt`.
 
-**Status:** Etapa 1 (fundação) escrita, mas ainda NÃO testada. Veja `PROGRESSO.md`.
+**Status:** Etapa 1 concluída; Etapa 2 (primeiro mapa 2D) escrita. Veja `PROGRESSO.md`.
 
 ## Requisitos
 - Node.js 20+ (testado só com a v22 de leitura; ver PROGRESSO.md)
@@ -29,3 +29,6 @@ docs/           Documento Mestre e decisões técnicas
 
 ## GitHub Pages
 Hospeda só o cliente web estático. O servidor multiplayer NÃO roda no Pages.
+
+## Verificação automática (GitHub Actions)
+O workflow `.github/workflows/verificar.yml` roda a cada push (e manualmente em Actions > Verificar > Run workflow): instala, checa tipos, roda testes, faz o build do cliente e liga o servidor para consultar `/health`.
