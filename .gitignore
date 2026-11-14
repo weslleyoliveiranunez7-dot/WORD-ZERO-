@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+# Android / assinatura (nunca versionar)
+*.keystore
+*.jks
+keystore.properties
+apps/web/android/app/build/
+apps/web/android/.gradle/

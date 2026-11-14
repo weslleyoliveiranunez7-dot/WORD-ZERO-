@@ -1,0 +1,14 @@
+{
+  "name": "world-zero",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev:web": "pnpm --filter @worldzero/web dev",
+    "dev:server": "pnpm --filter @worldzero/server dev",
+    "build:web": "pnpm --filter @worldzero/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test"
+  }
+}
