@@ -3,10 +3,12 @@ import { GAME_NAME, PROTOCOL_VERSION } from "@worldzero/shared";
 
 const SERVER_URL: string = import.meta.env.VITE_SERVER_URL ?? "http://localhost:2567";
 
-// Etapa 1: tela simples que prova (1) o cliente abre e (2) consegue falar com o servidor.
+// Tela inicial: confere o servidor (opcional) e abre o mapa de teste.
 export class BootScene extends Phaser.Scene {
   private title!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
+  private playButton!: Phaser.GameObjects.Text;
+  private onResize = (): void => this.layout();
 
   constructor() {
     super("BootScene");
@@ -14,26 +16,39 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     this.title = this.add
-      .text(0, 0, `${GAME_NAME}\nEtapa 1 - Fundacao (protocolo v${PROTOCOL_VERSION})`, {
+      .text(0, 0, `${GAME_NAME}\nEtapa 2 - Movimento (protocolo v${PROTOCOL_VERSION})`, {
         fontFamily: "sans-serif",
-        fontSize: "28px",
+        fontSize: "26px",
         color: "#d8e6d0",
         align: "center",
       })
       .setOrigin(0.5);
     this.status = this.add
-      .text(0, 0, "Servidor: verificando...", { fontFamily: "sans-serif", fontSize: "20px", color: "#c9b458" })
+      .text(0, 0, "Servidor: verificando...", { fontFamily: "sans-serif", fontSize: "18px", color: "#c9b458" })
       .setOrigin(0.5);
+    this.playButton = this.add
+      .text(0, 0, "JOGAR (mapa de teste)", {
+        fontFamily: "sans-serif",
+        fontSize: "24px",
+        color: "#0b0f0c",
+        backgroundColor: "#6fcf6f",
+        padding: { x: 20, y: 12 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.playButton.on("pointerdown", () => this.scene.start("GameScene"));
 
     this.layout();
-    this.scale.on("resize", () => this.layout());
+    this.scale.on("resize", this.onResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off("resize", this.onResize));
     void this.checkServer();
   }
 
   private layout(): void {
     const { width, height } = this.scale;
-    this.title.setPosition(width / 2, height / 2 - 30);
-    this.status.setPosition(width / 2, height / 2 + 40);
+    this.title.setPosition(width / 2, height / 2 - 70);
+    this.status.setPosition(width / 2, height / 2 - 10);
+    this.playButton.setPosition(width / 2, height / 2 + 70);
   }
 
   private async checkServer(): Promise<void> {
@@ -42,9 +57,9 @@ export class BootScene extends Phaser.Scene {
     try {
       const res = await fetch(`${SERVER_URL}/health`, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      this.status.setText("Servidor: online").setColor("#6fcf6f");
+      if (this.status.active) this.status.setText("Servidor: online").setColor("#6fcf6f");
     } catch {
-      this.status.setText("Servidor: offline (inicie com pnpm dev:server)").setColor("#d96b6b");
+      if (this.status.active) this.status.setText("Servidor: offline (o mapa de teste funciona sem ele)").setColor("#d96b6b");
     } finally {
       clearTimeout(timer);
     }
