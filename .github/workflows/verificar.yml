@@ -12,17 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Descompactar projeto (so se o zip estiver na raiz)
-        if: hashFiles('WORLD-ZERO-etapa1.zip') != ''
+      - name: Descompactar projeto (se houver WORLD-ZERO-*.zip na raiz)
+        if: hashFiles('WORLD-ZERO-*.zip') != ''
         run: |
-          unzip -o WORLD-ZERO-etapa1.zip -d /tmp/wz
-          rm -rf /tmp/wz/WORLD-ZERO/.github
-          cp -r /tmp/wz/WORLD-ZERO/. .
-          rm WORLD-ZERO-etapa1.zip
+          for z in WORLD-ZERO-*.zip; do
+            rm -rf /tmp/wz && mkdir /tmp/wz
+            unzip -o "$z" -d /tmp/wz
+            rm -rf /tmp/wz/WORLD-ZERO/.github
+            cp -r /tmp/wz/WORLD-ZERO/. .
+            rm "$z"
+          done
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add -A
-          git commit -m "Etapa 1: adiciona projeto"
+          git diff --cached --quiet || git commit -m "Atualiza projeto a partir do zip"
           git push
 
       - uses: pnpm/action-setup@v4
@@ -59,13 +62,13 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add pnpm-lock.yaml
-          git diff --cached --quiet || (git commit -m "Adiciona pnpm-lock.yaml" && git push)
+          git diff --cached --quiet || (git commit -m "Atualiza pnpm-lock.yaml" && git push)
 
       - name: Resumo
         if: always()
         run: |
           {
-            echo "## Resultado da Etapa 1"
+            echo "## Resultado da verificacao"
             echo "- Instalar dependencias: ${{ steps.install.outcome }}"
             echo "- Verificar tipos: ${{ steps.tipos.outcome }}"
             echo "- Testes: ${{ steps.testes.outcome }}"
@@ -77,4 +80,33 @@ jobs:
             tail -n 30 server.log 2>/dev/null || echo "(sem log)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          
+
+  # Publica o cliente web no GitHub Pages para voce jogar pelo celular.
+  # Exige: Settings > Pages > Source = "GitHub Actions".
+  publicar:
+    needs: verificar
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm build:web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
