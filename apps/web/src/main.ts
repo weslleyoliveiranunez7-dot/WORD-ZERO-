@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { BootScene } from "./game/BootScene";
+import { GameScene } from "./game/GameScene";
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -10,5 +11,5 @@ new Phaser.Game({
     width: "100%",
     height: "100%",
   },
-  scene: [BootScene],
+  scene: [BootScene, GameScene],
 });
