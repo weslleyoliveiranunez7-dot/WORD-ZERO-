@@ -1,0 +1,82 @@
+name: Verificar
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descompactar projeto (so se o zip estiver na raiz)
+        if: hashFiles('WORLD-ZERO-etapa1.zip') != ''
+        run: |
+          unzip -o WORLD-ZERO-etapa1.zip -d /tmp/wz
+          rm -rf /tmp/wz/WORLD-ZERO/.github
+          cp -r /tmp/wz/WORLD-ZERO/. .
+          rm WORLD-ZERO-etapa1.zip
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Etapa 1: adiciona projeto"
+          git push
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        id: install
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verificar tipos
+        id: tipos
+        run: pnpm typecheck
+
+      - name: Testes
+        id: testes
+        run: pnpm test
+
+      - name: Build do cliente web
+        id: build
+        run: pnpm build:web
+
+      - name: Teste do servidor (liga e consulta /health)
+        id: servidor
+        run: |
+          pnpm --filter @worldzero/server start > server.log 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://localhost:2567/health && break; sleep 1; done
+          curl -sf http://localhost:2567/health
+
+      - name: Salvar pnpm-lock.yaml no repositorio
+        if: success()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git diff --cached --quiet || (git commit -m "Adiciona pnpm-lock.yaml" && git push)
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "## Resultado da Etapa 1"
+            echo "- Instalar dependencias: ${{ steps.install.outcome }}"
+            echo "- Verificar tipos: ${{ steps.tipos.outcome }}"
+            echo "- Testes: ${{ steps.testes.outcome }}"
+            echo "- Build do cliente web: ${{ steps.build.outcome }}"
+            echo "- Servidor liga e responde /health: ${{ steps.servidor.outcome }}"
+            echo ""
+            echo "### Log do servidor"
+            echo '```'
+            tail -n 30 server.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          
