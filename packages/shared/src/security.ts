@@ -1,4 +1,4 @@
-import { parseInput, type PlayerInputMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
+import { parseInput, type PlayerInputMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -84,6 +84,15 @@ export function inspectUseItem(raw: unknown, slots: number): ActionInspection<Us
 }
 
 export function inspectRespawn(raw: unknown): ActionInspection<RespawnMsg> {
+  const bad = inspectKeys(raw, ["actionId"]);
+  if (bad) return { msg: null, ...bad };
+  const { actionId } = raw as Record<string, unknown>;
+  if (!isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { actionId } };
+}
+
+// Etapa 7: REQUEST_INTERACT so aceita { actionId }.
+export function inspectInteract(raw: unknown): ActionInspection<InteractMsg> {
   const bad = inspectKeys(raw, ["actionId"]);
   if (bad) return { msg: null, ...bad };
   const { actionId } = raw as Record<string, unknown>;

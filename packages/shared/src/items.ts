@@ -1,10 +1,10 @@
 // Etapa 6: definicoes de itens (Documento Mestre 4.4). Fonte unica de verdade: o servidor decide o que
 // cada item faz; o cliente so mostra nome/icone. Nunca confiar em nome, quantidade ou efeito vindos da rede.
 
-export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar"] as const;
+export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar", "wood", "stone", "scrap"] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
-export type ItemCategory = "food" | "drink" | "medical";
+export type ItemCategory = "food" | "drink" | "medical" | "resource";
 
 // Todos os medidores vao de 0 a 100 (100 = cheio / saudavel).
 export interface VitalEffects {
@@ -28,6 +28,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   water_bottle: { id: "water_bottle", name: "Garrafa de agua", category: "drink", weight: 0.5, maxStack: 5, effects: { thirst: 40 } },
   bandage: { id: "bandage", name: "Bandagem", category: "medical", weight: 0.1, maxStack: 5, effects: { health: 25 } },
   energy_bar: { id: "energy_bar", name: "Barra de energia", category: "food", weight: 0.1, maxStack: 10, effects: { energy: 30, hunger: 10 } },
+  // Etapa 7: recursos coletaveis (sem efeito ao consumir; servem para crafting na Etapa 10)
+  wood: { id: "wood", name: "Madeira", category: "resource", weight: 1, maxStack: 10, effects: {} },
+  stone: { id: "stone", name: "Pedra", category: "resource", weight: 1.5, maxStack: 10, effects: {} },
+  scrap: { id: "scrap", name: "Sucata", category: "resource", weight: 0.8, maxStack: 10, effects: {} },
 };
 
 export function isItemId(v: unknown): v is ItemId {

@@ -2,7 +2,7 @@ import type { ItemStack, Slot } from "./inventory";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 2; // 2 = Etapa 6 (sobrevivencia, inventario, PlayerSnap.dead)
+export const PROTOCOL_VERSION = 3; // 3 = Etapa 7 (coleta/loot: REQUEST_INTERACT, ENTITY_UPDATE); 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -101,4 +101,21 @@ export interface UseItemMsg {
 }
 export interface RespawnMsg {
   actionId: number;
+}
+
+// ---- Etapa 7: coleta e loot ----
+// O cliente so diz "quero interagir" (sem alvo, sem posicao): o servidor escolhe o alvo mais proximo
+// dentro do alcance, usando a posicao que ELE conhece do jogador.
+export interface InteractMsg {
+  actionId: number;
+}
+export interface DropView {
+  id: number;
+  x: number;
+  y: number;
+}
+// Estado dos recursos/mochilas (servidor -> clientes). `depleted` = tiles de recurso esgotados ("tx,ty").
+export interface EntityUpdateMsg {
+  drops: DropView[];
+  depleted: string[];
 }

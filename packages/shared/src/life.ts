@@ -1,3 +1,5 @@
+import type { ChunkedWorld } from "./chunks";
+import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
 import { ITEMS } from "./items";
 import { START_VITALS, SurvivalSim } from "./survival";
@@ -19,6 +21,7 @@ export class PlayerLife {
   deaths = 0;
   private lastActionId = -1;
   private lastUseMs = -Infinity;
+  private lastInteractMs = -Infinity;
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
 
   get dead(): boolean {
@@ -36,8 +39,8 @@ export class PlayerLife {
     return false;
   }
 
-  // Morte: perde TODO o inventario (a mochila de loot no chao entra na Etapa 7; ver DECISOES_TECNICAS).
-  // Nada e duplicado: o que sai do inventario so existe em `lost`, que e apenas informativo.
+  // Morte: o inventario esvazia. `lost` e so uma COPIA informativa (tela de morte); quem cria a mochila
+  // no chao (LootWorld.addDrop) e o servidor, uma unica vez, a partir de `lost`. Nada e duplicado.
   die(nowMs: number): void {
     if (this.dead) return;
     this.deadAtMs = nowMs;
@@ -67,6 +70,18 @@ export class PlayerLife {
     if (!this.survival.apply(ITEMS[s.id].effects)) return fail("sem_efeito", 0); // nao gasta o item
     this.inventory.removeFromSlot(slot, 1);
     this.lastUseMs = nowMs;
+    this.invVersion++;
+    return { ok: true };
+  }
+
+  // Etapa 7: coletar recurso ou pegar mochila perto de (px,py), a posicao que o SERVIDOR conhece.
+  interact(actionId: number, nowMs: number, world: ChunkedWorld, loot: LootWorld, px: number, py: number): ActionResult {
+    if (this.dead) return fail("morto", 1);
+    if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
+    if (nowMs - this.lastInteractMs < HARVEST_COOLDOWN_MS) return fail("em_recarga", 1);
+    const r = loot.interact(world, this.inventory, px, py, nowMs);
+    if (!r.ok) return fail(r.reason, 0); // nada por perto / esgotado / cheio: so avisa, nao pune
+    this.lastInteractMs = nowMs;
     this.invVersion++;
     return { ok: true };
   }
