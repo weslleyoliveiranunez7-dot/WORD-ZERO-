@@ -52,3 +52,10 @@
 - **Sem fogo amigo especial, sem zona segura**: PvP sempre ativo (Documento Mestre 1 e 5.5).
 - **Compensação de lag: nenhuma.** O servidor usa as posições que ele conhece; o cliente desenha os outros ~100 ms no passado. Nas bordas do alcance um golpe pode errar "por pouco". Medir antes de compensar.
 - **`COMBAT_EVENT` é só feedback**: o cliente nunca confirma dano por ele; vida, morte e loot chegam por `PLAYER_STATE`, snapshot e `ENTITY_UPDATE`.
+
+## Tomadas na Etapa 10 (valores provisórios, balancear depois de jogar)
+- **Bancada = item carregado.** Receitas avançadas (machado, picareta, lança) exigem ter a bancada no inventário; ela não é gasta. Motivo: construção só existe na Etapa 11. Lá a bancada vira peça colocada no mundo e a regra passa a ser "estar perto dela". A bancada ocupa 1 slot e pesa 8 kg.
+- **Tempo de fabricação = tempo ocupado.** O resultado é entregue na hora (transação única) e o jogador fica sem poder fabricar de novo durante `craftMs`. Escolhido para não haver estado "fabricando" a cancelar, perder na morte ou na queda de conexão. Se virar barra de progresso com cancelamento, a transação passa a acontecer no fim e precisa de testes novos.
+- **Ferramentas não são armas.** Machado e picareta só afetam a coleta (2 unidades por golpe); a única arma nova é a lança.
+- **Sem tocha por enquanto**: não existe ciclo de dia/noite. Entra com ele.
+- Receitas e quantidades: ver `RECIPES` em `packages/shared/src/crafting.ts` (fonte única de verdade, usada pelo servidor e pela interface).
