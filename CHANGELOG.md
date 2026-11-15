@@ -1,6 +1,11 @@
 # Changelog
 
 ## [Não lançado]
+### Etapa 3 - Mapa em chunks (2026-11-14)
+- Shared: `ChunkedWorld` (chunks de 16x16, mundo de teste 8x8, geração determinística por seed, 4 regiões), carregamento raio 1 e descarregamento raio 2; colisão funciona com mapa fixo e com chunks.
+- Cliente: `GameScene` desenha um Graphics por chunk e o destrói ao descarregar; HUD com chunk atual; novo minimapa (`Minimap.ts`).
+- 8 testes novos (22 no total em `shared`, rodados em Node). Cliente aguardando workflow e teste no celular.
+
 ### Etapa 2 - Primeiro mapa 2D (2026-11-14)
 - Shared: mapa de teste 40x30, colisão por caixa com deslize, conversão de entrada em velocidade, 12 testes.
 - Cliente: `GameScene` (câmera segue, zoom adaptado à tela), teclado WASD/setas, joystick virtual flutuante, HUD de FPS.

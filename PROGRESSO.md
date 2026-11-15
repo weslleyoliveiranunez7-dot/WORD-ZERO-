@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 2 (Primeiro mapa 2D) - código escrito; lógica testada, tela ainda não conferida no celular**
+Etapa atual: **Etapa 3 (Mapa em chunks) - código escrito; lógica testada em Node, cliente/tela ainda não conferidos**
+(Etapa 2 continua pendente de conferência visual no celular.)
 
 ## Regras que valem sempre (resumo do Documento Mestre)
 - Executar UMA etapa por vez; só avançar após teste e aprovação do usuário.
@@ -28,7 +29,7 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 0 | Auditoria do repositório | Concluída (não havia repositório; nada a auditar) |
 | 1 | Fundação (monorepo, Vite, Phaser, Colyseus, CI) | Concluída (workflow Verificar passou) |
 | 2 | Primeiro mapa 2D (personagem, câmera, colisão, teclado, joystick) | Escrita; falta conferir visualmente no celular |
-| 3 | Mapa em chunks | Pendente |
+| 3 | Mapa em chunks | Escrita; falta typecheck/build do cliente e conferir no celular |
 | 4 | Servidor multiplayer (2 jogadores) | Pendente |
 | 5 | Autoridade e segurança | Pendente |
 | 6 | Personagem e sobrevivência | Pendente |
@@ -78,6 +79,21 @@ Alterados:
 Fora do zip (editar à mão): `.github/workflows/verificar.yml` (nova versão com aceite de `WORLD-ZERO-*.zip` e job `publicar`).
 Apagados: nenhum.
 
+## O que já foi feito (Etapa 3)
+- `packages/shared/src/chunks.ts`: `CHUNK_SIZE=16`, mundo de teste 8x8 chunks (128x128 tiles), geração determinística por seed (hash inteiro + value noise), 4 regiões (planície, floresta, lago, ruínas), spawn no centro com área livre, borda do mundo sólida. `ChunkedWorld` com cache, `getChunk`, `isSolid`, `updateLoaded` (carrega raio 1 = 3x3, descarrega além do raio 2).
+- `movement.ts`: `moveWithCollision`/`collidesAt` aceitam `TileMap` ou `ChunkedWorld` (tipo `SolidMap`). Mapa de teste da Etapa 2 continua existindo e testado.
+- `apps/web/src/game/GameScene.ts`: usa `ChunkedWorld`, um `Graphics` por chunk criado ao carregar e destruído ao descarregar (só reage quando o jogador troca de chunk); HUD mostra chunk atual e quantos estão carregados.
+- `apps/web/src/ui/Minimap.ts`: minimapa por chunk (cor da região, chunks não carregados escurecidos, ponto do jogador).
+- `packages/shared/src/chunks.test.ts`: 8 testes (determinismo, seeds, ordem de geração, borda/spawn, tileAt, carregar/descarregar, travessia de vários chunks, desempenho).
+
+## Verificado e não verificado (Etapa 3)
+- Verificado (Node 22, tsc, shim do vitest): 22 testes de `shared` passaram (8 novos + 12 de movimento + 2). Geração de 64 chunks em ~8 ms (~0,13 ms/chunk) neste ambiente. Caminhada simulada atravessou 5 chunks, no máximo 12 residentes, 18 gerados, 6 descartados, posição sempre finita e fora de sólidos.
+- NÃO verificado: typecheck e build do cliente (Phaser/Vite) com `GameScene.ts` e `Minimap.ts`; desenho dos chunks, minimapa e desempenho no celular/A04; vitest real (o workflow confirma).
+- Ainda não existe: mundo maior que 8x8 (ampliar só depois de medir no A04), persistência de alterações em chunks, sincronização de chunks no servidor (Etapa 4/5).
+
+## Critério de aceite da Etapa 3
+Jogador atravessa vários chunks sem travar e sem perder posição. Só marcar como concluída quando: (1) o workflow `Verificar` passar e (2) o usuário abrir o jogo no celular, andar por vários chunks, ver o minimapa seguir o ponto e o contador de chunks carregados ficar em poucas unidades (máx. esperado 25), sem engasgos.
+
 ## Verificado e não verificado (Etapa 2)
 - Verificado: os 14 testes de `shared` (incluindo os 12 de movimento) passaram rodando em Node 22 com um shim do vitest. O workflow `Verificar` ainda vai confirmar com vitest/tsc de verdade.
 - NÃO verificado: typecheck e build do código do cliente (Phaser/Vite), a aparência da tela, o toque do joystick em celular real, o desempenho no A04.
@@ -114,7 +130,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 3 (mapa em chunks). Prompt: Parte 16 do Documento Mestre, "PROMPT ETAPA 3".
+3. Etapa 3 entregue em `WORLD-ZERO-etapa3.zip` (só os arquivos alterados). Depois de aprovada: Etapa 4 (servidor multiplayer), prompt na Parte 16 do Documento Mestre.
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.
