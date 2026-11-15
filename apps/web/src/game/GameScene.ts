@@ -20,6 +20,7 @@ import {
   type WorldSnapshot,
 } from "@worldzero/shared";
 import { Hud } from "../ui/Hud";
+import { uiRoot } from "../ui/landscape";
 import { Minimap } from "../ui/Minimap";
 import { NetClient } from "../net/NetClient";
 import { getServerUrl } from "../net/serverUrl";
@@ -145,7 +146,7 @@ export class GameScene extends Phaser.Scene {
     this.clockEl = document.createElement("div");
     this.clockEl.dataset.ui = "clock";
     Object.assign(this.clockEl.style, { position: "fixed", top: "8px", left: "50%", transform: "translateX(-50%)", color: "#fff", font: "bold 14px monospace", background: "rgba(0,0,0,0.5)", padding: "4px 10px", borderRadius: "12px", pointerEvents: "none", zIndex: "20", whiteSpace: "nowrap" });
-    document.body.appendChild(this.clockEl);
+    uiRoot().appendChild(this.clockEl);
     const tb = document.createElement("button");
     tb.textContent = "TOCHA";
     tb.dataset.ui = "torch";
@@ -154,7 +155,7 @@ export class GameScene extends Phaser.Scene {
       e.preventDefault();
       this.toggleTorch();
     });
-    document.body.appendChild(tb);
+    uiRoot().appendChild(tb);
     this.torchBtn = tb;
     this.torchKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     this.torchOn = true;
@@ -185,7 +186,7 @@ export class GameScene extends Phaser.Scene {
         e.preventDefault();
         this.net?.interact();
       });
-      document.body.appendChild(btn);
+      uiRoot().appendChild(btn);
       this.actionBtn = btn;
       const atk = document.createElement("button");
       atk.textContent = "ATACAR";
@@ -197,7 +198,7 @@ export class GameScene extends Phaser.Scene {
         atk.style.opacity = "0.55"; // so cosmetico: o servidor e quem aplica a recarga
         window.setTimeout(() => (atk.style.opacity = "1"), this.weaponCooldownMs);
       });
-      document.body.appendChild(atk);
+      uiRoot().appendChild(atk);
       this.attackBtn = atk;
       this.net.onInventory = (m) => {
         this.survivalUi?.setInventory(m);

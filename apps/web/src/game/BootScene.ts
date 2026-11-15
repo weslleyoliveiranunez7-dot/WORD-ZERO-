@@ -57,12 +57,18 @@ export class BootScene extends Phaser.Scene {
 
   private layout(): void {
     const { width, height } = this.scale;
+    // tela pequena (deitada baixa ou area em pe): encolhe os textos e quebra linhas longas para nao sair da tela
+    const k = Phaser.Math.Clamp(Math.min(width / 560, height / 360), 0.55, 1);
+    const wrap = (width * 0.94) / k;
+    for (const t of [this.title, this.status, this.playButton, this.onlineButton]) t.setScale(k);
+    this.title.setWordWrapWidth(wrap, true);
+    this.status.setWordWrapWidth(wrap, true).setAlign("center");
     if (height < 460) {
       // tela deitada e baixa: tudo mais junto para caber
       this.title.setPosition(width / 2, height * 0.2);
-      this.status.setPosition(width / 2, height * 0.4);
-      this.playButton.setPosition(width / 2, height * 0.6);
-      this.onlineButton.setPosition(width / 2, height * 0.82);
+      this.status.setPosition(width / 2, height * 0.42);
+      this.playButton.setPosition(width / 2, height * 0.62);
+      this.onlineButton.setPosition(width / 2, height * 0.84);
       return;
     }
     this.title.setPosition(width / 2, height / 2 - 70);
