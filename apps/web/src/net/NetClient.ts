@@ -159,6 +159,10 @@ export class NetClient {
     if (this.status === "online") this.room?.send("REQUEST_BUILD", { op, tx, ty, slot, actionId: ++this.actionId });
   }
 
+  setTorch(on: boolean): void {
+    if (this.status === "online") this.room?.send("REQUEST_TORCH", { on });
+  }
+
   respawn(): void {
     if (this.status === "online") this.room?.send("REQUEST_RESPAWN", { actionId: ++this.actionId });
   }
