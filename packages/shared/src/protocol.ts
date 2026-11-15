@@ -69,3 +69,8 @@ export function parseJoinOptions(raw: unknown): JoinOptions | null {
   const { protocol } = raw as Record<string, unknown>;
   return typeof protocol === "number" ? { protocol } : null;
 }
+
+// Resposta do servidor quando recusa uma mensagem/acao (enviada no maximo 1x por segundo por jogador).
+export interface ActionRejectedMsg {
+  reason: string;
+}
