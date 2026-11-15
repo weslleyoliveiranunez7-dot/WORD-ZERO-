@@ -91,6 +91,9 @@ Apagados: nenhum.
 - NÃO verificado: typecheck e build do cliente (Phaser/Vite) com `GameScene.ts` e `Minimap.ts`; desenho dos chunks, minimapa e desempenho no celular/A04; vitest real (o workflow confirma).
 - Ainda não existe: mundo maior que 8x8 (ampliar só depois de medir no A04), persistência de alterações em chunks, sincronização de chunks no servidor (Etapa 4/5).
 
+## Problema encontrado no celular (Etapa 3)
+- Usuário mediu 10 a 20 FPS. Causa provável: um `Graphics` por chunk é reexecutado a cada frame (~256 comandos x 9-12 chunks). Correção: cada chunk é desenhado uma vez e convertido em textura (`generateTexture`), 1 imagem por chunk; `antialias:false`/`pixelArt:true` no Phaser. NÃO verificado no celular; se continuar baixo, medir de novo (ver HUD) antes de mexer em outra coisa (próximos suspeitos: zoom/resolução da tela, minimapa, joystick).
+
 ## Critério de aceite da Etapa 3
 Jogador atravessa vários chunks sem travar e sem perder posição. Só marcar como concluída quando: (1) o workflow `Verificar` passar e (2) o usuário abrir o jogo no celular, andar por vários chunks, ver o minimapa seguir o ponto e o contador de chunks carregados ficar em poucas unidades (máx. esperado 25), sem engasgos.
 
