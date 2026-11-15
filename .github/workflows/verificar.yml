@@ -56,6 +56,29 @@ jobs:
           for i in $(seq 1 40); do curl -sf http://localhost:2567/health && break; sleep 1; done
           curl -sf http://localhost:2567/health
 
+      - name: Teste multiplayer (2 clientes separados, processos diferentes)
+        id: multiplayer
+        run: |
+          curl -sf http://localhost:2567/health
+          cd apps/server
+          export SERVER_WS=ws://localhost:2567
+          RA=0; RB=0
+          pnpm exec tsx src/bot.ts --name A --linger 12000 > ../../botA.log 2>&1 &
+          PA=$!
+          pnpm exec tsx src/bot.ts --name B --reconnect --linger 3000 > ../../botB.log 2>&1 || RB=$?
+          wait $PA || RA=$?
+          cd ../..
+          cat botA.log botB.log
+          [ "$RA" -eq 0 ] && [ "$RB" -eq 0 ]
+
+      - name: Teste de seguranca (cliente malicioso tenta trapacear)
+        id: seguranca
+        run: |
+          set -o pipefail
+          curl -sf http://localhost:2567/health
+          cd apps/server
+          SERVER_WS=ws://localhost:2567 pnpm exec tsx src/attacker.ts 2>&1 | tee ../../atacante.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -74,6 +97,18 @@ jobs:
             echo "- Testes: ${{ steps.testes.outcome }}"
             echo "- Build do cliente web: ${{ steps.build.outcome }}"
             echo "- Servidor liga e responde /health: ${{ steps.servidor.outcome }}"
+            echo "- Multiplayer (2 clientes + reconexao): ${{ steps.multiplayer.outcome }}"
+            echo "- Seguranca (cliente malicioso): ${{ steps.seguranca.outcome }}"
+            echo ""
+            echo "### Logs dos bots"
+            echo '```'
+            cat botA.log botB.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Ataques de teste (esperado: todos OK)"
+            echo '```'
+            cat atacante.log 2>/dev/null || echo "(sem log)"
+            echo '```'
             echo ""
             echo "### Log do servidor"
             echo '```'
