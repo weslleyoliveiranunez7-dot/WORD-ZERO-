@@ -2,20 +2,20 @@ import Phaser from "phaser";
 import {
   BUILD_REACH,
   type StructureUpdateMsg,
-  PLAYER_HALF_SIZE,
   CHUNK_SIZE,
   ChunkedWorld,
   INTERPOLATION_DELAY_MS,
   ITEMS,
   PLAYER_SPEED,
   SnapshotBuffer,
+  dayPeriod,
+  formatClock,
   TILE_ORDER,
   inputToVelocity,
   moveWithCollision,
   type Chunk,
   type CombatEventMsg,
   type EntityUpdateMsg,
-  type TileType,
   type Vec2,
   type WorldSnapshot,
 } from "@worldzero/shared";
@@ -26,13 +26,25 @@ import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 import { SurvivalUi } from "../ui/SurvivalUi";
 import { BuildUi } from "../ui/BuildUi";
-
-const TILE_COLORS: Record<TileType, number[]> = {
-  grass: [0x2f5d34, 0x2a5530], // xadrez leve para o movimento ficar visivel
-  wall: [0x5b5b66],
-  water: [0x2b5f9e],
-  tree: [0x1e4026],
-};
+import {
+  CHAR_ME,
+  CHAR_OTHER,
+  MOB_DEER,
+  MOB_ZOMBIE,
+  drawBackpack,
+  drawChestPiece,
+  drawDoorPiece,
+  drawFloorPiece,
+  drawRoofPiece,
+  drawRubbleTile,
+  drawStumpTile,
+  drawTile,
+  drawWallPiece,
+  drawWindowPiece,
+  ensureCharacterTextures,
+  ensureMobTextures,
+} from "./sprites";
+import { DayNight } from "./daylight";
 
 const VISIBLE_TILES_SHORT_SIDE = 10; // quantos tiles cabem no lado menor da tela
 
@@ -45,7 +57,7 @@ export class GameScene extends Phaser.Scene {
   // rede (so no modo online)
   private net?: NetClient;
   private snaps = new SnapshotBuffer();
-  private remotes = new Map<string, Phaser.GameObjects.Arc>();
+  private remotes = new Map<string, Phaser.GameObjects.Image>();
   private synced = false;
   private survivalUi?: SurvivalUi;
   private lootGfx?: Phaser.GameObjects.Graphics; // marcas de recurso esgotado e mochilas (so desenho)
@@ -62,7 +74,9 @@ export class GameScene extends Phaser.Scene {
   private chestAt: { tx: number; ty: number } | null = null;
   private lastDir = { x: 0, y: 1 }; // ultima direcao andada: define o tile "a frente" onde se constroi
   private attackBtn?: HTMLButtonElement;
-  private mobSprites = new Map<number, Phaser.GameObjects.Arc>(); // criaturas (so desenho; posicao vem do servidor)
+  private mobSprites = new Map<number, Phaser.GameObjects.Image>();
+  private mobHpGfx?: Phaser.GameObjects.Graphics; // barrinhas de vida das criaturas (so desenho)
+  // criaturas (so desenho; posicao vem do servidor)
   private fxCount = 0; // efeitos de combate ao mesmo tempo (limite: protege o A04)
   private weaponCooldownMs = 700;
   private speedMul = 1; // vem do servidor (energia baixa = mais lento)
@@ -73,7 +87,14 @@ export class GameScene extends Phaser.Scene {
   private lastIy = 0;
   private inputTimer = 0;
   private pos!: Vec2;
-  private player!: Phaser.GameObjects.Arc;
+  private player!: Phaser.GameObjects.Image;
+  private walkT = 0; // relogio so da animacao de andar
+  private dayNight?: DayNight;
+  private clockEl?: HTMLDivElement;
+  private torchBtn?: HTMLButtonElement;
+  private torchKey?: Phaser.Input.Keyboard.Key;
+  private torchOn = true; // jogador quer a tocha acesa
+  private hasTorch = true; // tem tocha no inventario (offline: sempre, para testar)
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private joystick?: VirtualJoystick;
   private hud!: Hud;
@@ -89,9 +110,10 @@ export class GameScene extends Phaser.Scene {
     this.pos = { ...this.world.spawn };
     this.syncChunks();
 
-    this.player = this.add.circle(this.pos.x, this.pos.y, PLAYER_HALF_SIZE, 0xf2c14e);
-    this.player.setStrokeStyle(2, 0x222222);
-    this.player.setDepth(10);
+    ensureCharacterTextures(this);
+    ensureMobTextures(this);
+    this.player = this.add.image(this.pos.x, this.pos.y, CHAR_ME).setOrigin(0.5, 0.68).setDepth(10);
+    this.dayNight = new DayNight(this);
 
     const cam = this.cameras.main;
     cam.setBackgroundColor("#0b0f0c");
@@ -119,6 +141,24 @@ export class GameScene extends Phaser.Scene {
 
     if (isTouchDevice()) this.joystick = new VirtualJoystick();
     this.hud = new Hud();
+    this.clockEl = document.createElement("div");
+    this.clockEl.dataset.ui = "clock";
+    Object.assign(this.clockEl.style, { position: "fixed", top: "8px", left: "50%", transform: "translateX(-50%)", color: "#fff", font: "bold 14px monospace", background: "rgba(0,0,0,0.5)", padding: "4px 10px", borderRadius: "12px", pointerEvents: "none", zIndex: "20", whiteSpace: "nowrap" });
+    document.body.appendChild(this.clockEl);
+    const tb = document.createElement("button");
+    tb.textContent = "TOCHA";
+    tb.dataset.ui = "torch";
+    Object.assign(tb.style, { position: "fixed", right: "108px", bottom: "140px", width: "60px", height: "60px", borderRadius: "50%", border: "2px solid #fff", background: "#b5651d", color: "#fff", font: "bold 11px monospace", zIndex: "16", touchAction: "manipulation" });
+    tb.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      this.toggleTorch();
+    });
+    document.body.appendChild(tb);
+    this.torchBtn = tb;
+    this.torchKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    this.torchOn = true;
+    this.hasTorch = !data?.online; // online: so com uma tocha no inventario (fabricada); offline: sempre, para testar
+    this.refreshTorchBtn();
     if (data?.online) {
       this.net = new NetClient(getServerUrl());
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
@@ -138,6 +178,7 @@ export class GameScene extends Phaser.Scene {
       this.lootGfx = this.add.graphics().setDepth(8);
       const btn = document.createElement("button");
       btn.textContent = "COLETAR";
+      btn.dataset.ui = "collect";
       Object.assign(btn.style, { position: "fixed", right: "16px", bottom: "120px", width: "84px", height: "84px", borderRadius: "50%", border: "2px solid #fff", background: "#3a7d44", color: "#fff", font: "bold 12px monospace", zIndex: "16", touchAction: "manipulation" });
       btn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
@@ -147,6 +188,7 @@ export class GameScene extends Phaser.Scene {
       this.actionBtn = btn;
       const atk = document.createElement("button");
       atk.textContent = "ATACAR";
+      atk.dataset.ui = "attack";
       Object.assign(atk.style, { position: "fixed", right: "108px", bottom: "56px", width: "76px", height: "76px", borderRadius: "50%", border: "2px solid #fff", background: "#a63a3a", color: "#fff", font: "bold 12px monospace", zIndex: "16", touchAction: "manipulation" });
       atk.addEventListener("pointerdown", (e) => {
         e.preventDefault();
@@ -158,6 +200,8 @@ export class GameScene extends Phaser.Scene {
       this.attackBtn = atk;
       this.net.onInventory = (m) => {
         this.survivalUi?.setInventory(m);
+        this.hasTorch = m.slots.some((s) => s?.id === "torch");
+        this.refreshTorchBtn();
         this.buildUi?.setInventory(m.slots);
       };
       this.structGfx = this.add.graphics().setDepth(7);
@@ -199,8 +243,13 @@ export class GameScene extends Phaser.Scene {
       this.world.extraSolid = null;
       this.actionBtn?.remove();
       this.attackBtn?.remove();
+      this.dayNight?.destroy();
+      this.dayNight = undefined;
+      this.clockEl?.remove();
+      this.torchBtn?.remove();
       this.mobSprites.forEach((m) => m.destroy());
       this.mobSprites.clear();
+      this.mobHpGfx = undefined; // o Graphics morre junto com a cena; recria na proxima
       this.net?.close();
       this.remotes.forEach((r) => r.destroy());
       this.remotes.clear();
@@ -227,12 +276,12 @@ export class GameScene extends Phaser.Scene {
     for (const [tx, ty, floor, top, mine] of m.rows) {
       const x = tx * ts;
       const y = ty * ts;
-      if (floor) g.fillStyle(0x9c8460, 1).fillRect(x, y, ts, ts).lineStyle(1, 0x6b5a3e, 1).strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
-      if (top === 1) g.fillStyle(0x6d4c41, 1).fillRect(x, y, ts, ts).lineStyle(2, 0x3e2a1f, 1).strokeRect(x + 1, y + 1, ts - 2, ts - 2);
-      if (top === 2) g.fillStyle(0xb07a3c, 1).fillRect(x + 2, y + 2, ts - 4, ts - 4).lineStyle(2, 0x5a3a14, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
-      if (top === 3) g.lineStyle(2, 0xb07a3c, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
-      if (top === 4) g.fillStyle(0xd4a017, 1).fillRect(x + 6, y + 9, ts - 12, ts - 16).lineStyle(2, 0x6b5200, 1).strokeRect(x + 6, y + 9, ts - 12, ts - 16);
-      if (top === 5) g.fillStyle(0x9fd8ee, 0.55).fillRect(x + 2, y + 2, ts - 4, ts - 4).lineStyle(3, 0x4a3a2a, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
+      if (floor) drawFloorPiece(g, x, y, ts);
+      if (top === 1) drawWallPiece(g, x, y, ts);
+      if (top === 2) drawDoorPiece(g, x, y, ts, false);
+      if (top === 3) drawDoorPiece(g, x, y, ts, true);
+      if (top === 4) drawChestPiece(g, x, y, ts);
+      if (top === 5) drawWindowPiece(g, x, y, ts);
       if (mine === 1) g.lineStyle(2, 0x7bdc65, 0.9).strokeRect(x + 1, y + 1, ts - 2, ts - 2);
       if (mine === 2) g.lineStyle(2, 0x65b8dc, 0.9).strokeRect(x + 1, y + 1, ts - 2, ts - 2); // acesso liberado pelo dono
     }
@@ -265,7 +314,7 @@ export class GameScene extends Phaser.Scene {
     for (const k of roofs) {
       const x = (k % this.world.width) * ts;
       const y = Math.floor(k / this.world.width) * ts;
-      g.fillStyle(0x8a3b2e, group.has(k) ? 0.2 : 0.95).fillRect(x, y, ts, ts).lineStyle(1, 0x4d1f17, group.has(k) ? 0.2 : 1).strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
+      drawRoofPiece(g, x, y, ts, group.has(k) ? 0.2 : 0.95);
     }
   }
 
@@ -313,6 +362,15 @@ export class GameScene extends Phaser.Scene {
     this.pos = moveWithCollision(this.world, this.pos, vel, delta / 1000);
     this.player.setPosition(this.pos.x, this.pos.y);
     this.player.setVisible(!this.dead);
+    if (ix !== 0 || iy !== 0) {
+      this.walkT += delta;
+      this.player.setAngle(Math.sin(this.walkT / 80) * 7); // balanca ao andar
+    } else {
+      this.walkT = 0;
+      this.player.setAngle(0);
+    }
+    if (this.torchKey && Phaser.Input.Keyboard.JustDown(this.torchKey)) this.toggleTorch();
+    this.dayNight?.update(Date.now(), this.pos.x, this.pos.y, this.dead, this.hasTorch && this.torchOn, this.player.angle);
     this.syncChunks();
     if (this.net) {
       this.updateBuildHints();
@@ -332,6 +390,13 @@ export class GameScene extends Phaser.Scene {
       const net = this.net ? ` | ${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
       this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}`);
       this.minimap.update(this.pos.x, this.pos.y);
+      if (this.clockEl && this.dayNight) {
+        const mins = this.dayNight.gameMinutes;
+        const p = dayPeriod(mins);
+        const h = mins / 60;
+        const icon = h >= 6 && h < 18 ? "\u2600" : "\u263E"; // sol de dia, lua de noite
+        this.clockEl.textContent = `${icon} ${formatClock(mins)} - ${p === "manha" ? "manh\u00e3" : p}`;
+      }
     }
   }
 
@@ -374,9 +439,11 @@ export class GameScene extends Phaser.Scene {
       if (id === this.net?.sessionId) continue;
       let r = this.remotes.get(id);
       if (!r) {
-        r = this.add.circle(p.x, p.y, PLAYER_HALF_SIZE, 0x4ea1f2).setStrokeStyle(2, 0x222222).setDepth(9);
+        r = this.add.image(p.x, p.y, CHAR_OTHER).setOrigin(0.5, 0.68).setDepth(9);
         this.remotes.set(id, r);
       }
+      if (Math.hypot(p.x - r.x, p.y - r.y) > 0.3) r.setAngle(Math.sin(performance.now() / 80) * 7);
+      else r.setAngle(0);
       r.setPosition(p.x, p.y);
       r.setVisible(!this.deadIds.has(id));
     }
@@ -388,26 +455,19 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Recurso esgotado = tile escurecido com X; mochila = quadrado marrom. O servidor decide; aqui so desenha.
+  // Recurso esgotado: arvore vira toco e pedra vira cascalho; mochila = desenho de mochila. O servidor decide; aqui so desenha.
   private drawEntities(m: EntityUpdateMsg): void {
     const g = this.lootGfx;
     if (!g) return;
     const ts = this.world.tileSize;
     g.clear();
-    g.fillStyle(0x000000, 0.55);
-    g.lineStyle(2, 0xaaaaaa, 0.9);
     for (const k of m.depleted) {
       const [tx, ty] = k.split(",").map(Number);
-      g.fillRect(tx * ts, ty * ts, ts, ts);
-      g.lineBetween(tx * ts + 6, ty * ts + 6, tx * ts + ts - 6, ty * ts + ts - 6);
-      g.lineBetween(tx * ts + ts - 6, ty * ts + 6, tx * ts + 6, ty * ts + ts - 6);
+      const type = this.world.tileAt(tx, ty);
+      if (type === "tree") drawStumpTile(g, tx, ty, ts);
+      else if (type === "wall") drawRubbleTile(g, tx, ty, ts);
     }
-    for (const d of m.drops) {
-      g.fillStyle(0x8b5a2b, 1);
-      g.fillRect(d.x - 9, d.y - 9, 18, 18);
-      g.lineStyle(2, 0xffd36b, 1);
-      g.strokeRect(d.x - 9, d.y - 9, 18, 18);
-    }
+    for (const d of m.drops) drawBackpack(g, d.x, d.y);
   }
 
   // Etapa 9: feedback do combate. So DESENHO a partir do que o servidor mandou (COMBAT_EVENT); nada aqui calcula dano ou vida.
@@ -440,18 +500,28 @@ export class GameScene extends Phaser.Scene {
     rise("MORTE", "#ff5555", 16, 900);
   }
 
-  // Zumbi = vermelho, cervo = marrom claro. Anda suave ate a posicao do servidor; anel mais fino = menos vida.
+  // Zumbi e cervo: anda suave ate a posicao do servidor; a barrinha de vida em cima mostra quanta vida resta.
   private drawMobs(snap: WorldSnapshot): void {
     const seen = new Set<number>();
+    const hg = (this.mobHpGfx ??= this.add.graphics().setDepth(11));
+    hg.clear();
     for (const m of snap.mobs ?? []) {
       seen.add(m.id);
       let s = this.mobSprites.get(m.id);
       if (!s) {
-        s = this.add.circle(m.x, m.y, m.k === 0 ? 11 : 9, m.k === 0 ? 0xc0392b : 0xc8a165).setDepth(9);
+        s = this.add.image(m.x, m.y, m.k === 0 ? MOB_ZOMBIE : MOB_DEER).setOrigin(0.5, 0.68).setDepth(9);
         this.mobSprites.set(m.id, s);
       }
-      s.setPosition(s.x + (m.x - s.x) * 0.5, s.y + (m.y - s.y) * 0.5);
-      s.setStrokeStyle(Math.max(1, Math.round((m.hp / 100) * 4)), 0xffffff);
+      const dx = m.x - s.x;
+      const nx = s.x + dx * 0.5;
+      const ny = s.y + (m.y - s.y) * 0.5;
+      const moving = Math.hypot(m.x - s.x, m.y - s.y) > 0.6;
+      if (m.k !== 0 && Math.abs(dx) > 0.6) s.setFlipX(dx < 0); // cervo olha para onde anda
+      s.setAngle(moving && m.k === 0 ? Math.sin(performance.now() / 110) * 6 : 0); // zumbi cambaleia
+      s.setPosition(nx, ny);
+      const frac = Math.max(0, Math.min(1, m.hp / 100));
+      hg.fillStyle(0x000000, 0.6).fillRect(nx - 10, ny - 24, 20, 4);
+      hg.fillStyle(frac > 0.5 ? 0x6fcf6f : frac > 0.25 ? 0xe0b030 : 0xd94a4a, 1).fillRect(nx - 9, ny - 23, 18 * frac, 2);
     }
     for (const [id, s] of this.mobSprites) {
       if (!seen.has(id)) {
@@ -461,10 +531,25 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private toggleTorch(): void {
+    if (!this.hasTorch) return;
+    this.torchOn = !this.torchOn;
+    this.refreshTorchBtn();
+  }
+
+  private refreshTorchBtn(): void {
+    if (!this.torchBtn) return;
+    this.torchBtn.style.display = this.hasTorch ? "block" : "none";
+    this.torchBtn.style.background = this.torchOn ? "#d9822b" : "#4a4a4a";
+    this.torchBtn.textContent = this.torchOn ? "TOCHA ON" : "TOCHA OFF";
+  }
+
   private applyZoom(): void {
     const { width, height } = this.scale;
     const zoom = Math.min(width, height) / (this.world.tileSize * VISIBLE_TILES_SHORT_SIDE);
-    this.cameras.main.setZoom(Phaser.Math.Clamp(zoom, 0.75, 3));
+    const z = Phaser.Math.Clamp(zoom, 0.75, 3);
+    this.cameras.main.setZoom(z);
+    this.dayNight?.resize(z);
   }
 
   // So mexe nos chunks quando o jogador troca de chunk.
@@ -497,13 +582,7 @@ export class GameScene extends Phaser.Scene {
         const gx = chunk.cx * CHUNK_SIZE + lx;
         const gy = chunk.cy * CHUNK_SIZE + ly;
         const type = TILE_ORDER[chunk.tiles[ly * CHUNK_SIZE + lx]];
-        const colors = TILE_COLORS[type];
-        g.fillStyle(colors[(gx + gy) % colors.length], 1);
-        g.fillRect(lx * ts, ly * ts, ts, ts);
-        if (type === "tree") {
-          g.fillStyle(0x3c7a43, 1);
-          g.fillCircle(lx * ts + ts / 2, ly * ts + ts / 2, ts * 0.38);
-        }
+        drawTile(g, type, lx, ly, gx, gy, ts);
       }
     }
     const key = `chunk-${chunk.cy * this.world.chunksX + chunk.cx}`;
