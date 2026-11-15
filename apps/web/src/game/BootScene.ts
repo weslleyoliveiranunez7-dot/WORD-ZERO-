@@ -57,6 +57,14 @@ export class BootScene extends Phaser.Scene {
 
   private layout(): void {
     const { width, height } = this.scale;
+    if (height < 460) {
+      // tela deitada e baixa: tudo mais junto para caber
+      this.title.setPosition(width / 2, height * 0.2);
+      this.status.setPosition(width / 2, height * 0.4);
+      this.playButton.setPosition(width / 2, height * 0.6);
+      this.onlineButton.setPosition(width / 2, height * 0.82);
+      return;
+    }
     this.title.setPosition(width / 2, height / 2 - 70);
     this.status.setPosition(width / 2, height / 2 - 10);
     this.playButton.setPosition(width / 2, height / 2 + 70);

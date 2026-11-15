@@ -8,8 +8,6 @@ import {
   ITEMS,
   PLAYER_SPEED,
   SnapshotBuffer,
-  dayPeriod,
-  formatClock,
   TILE_ORDER,
   inputToVelocity,
   moveWithCollision,
@@ -44,7 +42,6 @@ import {
   ensureCharacterTextures,
   ensureMobTextures,
 } from "./sprites";
-import { DayNight } from "./daylight";
 
 const VISIBLE_TILES_SHORT_SIDE = 10; // quantos tiles cabem no lado menor da tela
 
@@ -89,12 +86,6 @@ export class GameScene extends Phaser.Scene {
   private pos!: Vec2;
   private player!: Phaser.GameObjects.Image;
   private walkT = 0; // relogio so da animacao de andar
-  private dayNight?: DayNight;
-  private clockEl?: HTMLDivElement;
-  private torchBtn?: HTMLButtonElement;
-  private torchKey?: Phaser.Input.Keyboard.Key;
-  private torchOn = true; // jogador quer a tocha acesa
-  private hasTorch = true; // tem tocha no inventario (offline: sempre, para testar)
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private joystick?: VirtualJoystick;
   private hud!: Hud;
@@ -113,7 +104,6 @@ export class GameScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     ensureMobTextures(this);
     this.player = this.add.image(this.pos.x, this.pos.y, CHAR_ME).setOrigin(0.5, 0.68).setDepth(10);
-    this.dayNight = new DayNight(this);
 
     const cam = this.cameras.main;
     cam.setBackgroundColor("#0b0f0c");
@@ -141,24 +131,6 @@ export class GameScene extends Phaser.Scene {
 
     if (isTouchDevice()) this.joystick = new VirtualJoystick();
     this.hud = new Hud();
-    this.clockEl = document.createElement("div");
-    this.clockEl.dataset.ui = "clock";
-    Object.assign(this.clockEl.style, { position: "fixed", top: "8px", left: "50%", transform: "translateX(-50%)", color: "#fff", font: "bold 14px monospace", background: "rgba(0,0,0,0.5)", padding: "4px 10px", borderRadius: "12px", pointerEvents: "none", zIndex: "20", whiteSpace: "nowrap" });
-    document.body.appendChild(this.clockEl);
-    const tb = document.createElement("button");
-    tb.textContent = "TOCHA";
-    tb.dataset.ui = "torch";
-    Object.assign(tb.style, { position: "fixed", right: "108px", bottom: "140px", width: "60px", height: "60px", borderRadius: "50%", border: "2px solid #fff", background: "#b5651d", color: "#fff", font: "bold 11px monospace", zIndex: "16", touchAction: "manipulation" });
-    tb.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      this.toggleTorch();
-    });
-    document.body.appendChild(tb);
-    this.torchBtn = tb;
-    this.torchKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T);
-    this.torchOn = true;
-    this.hasTorch = !data?.online; // online: so com uma tocha no inventario (fabricada); offline: sempre, para testar
-    this.refreshTorchBtn();
     if (data?.online) {
       this.net = new NetClient(getServerUrl());
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
@@ -200,8 +172,6 @@ export class GameScene extends Phaser.Scene {
       this.attackBtn = atk;
       this.net.onInventory = (m) => {
         this.survivalUi?.setInventory(m);
-        this.hasTorch = m.slots.some((s) => s?.id === "torch");
-        this.refreshTorchBtn();
         this.buildUi?.setInventory(m.slots);
       };
       this.structGfx = this.add.graphics().setDepth(7);
@@ -243,10 +213,6 @@ export class GameScene extends Phaser.Scene {
       this.world.extraSolid = null;
       this.actionBtn?.remove();
       this.attackBtn?.remove();
-      this.dayNight?.destroy();
-      this.dayNight = undefined;
-      this.clockEl?.remove();
-      this.torchBtn?.remove();
       this.mobSprites.forEach((m) => m.destroy());
       this.mobSprites.clear();
       this.mobHpGfx = undefined; // o Graphics morre junto com a cena; recria na proxima
@@ -369,8 +335,6 @@ export class GameScene extends Phaser.Scene {
       this.walkT = 0;
       this.player.setAngle(0);
     }
-    if (this.torchKey && Phaser.Input.Keyboard.JustDown(this.torchKey)) this.toggleTorch();
-    this.dayNight?.update(Date.now(), this.pos.x, this.pos.y, this.dead, this.hasTorch && this.torchOn, this.player.angle);
     this.syncChunks();
     if (this.net) {
       this.updateBuildHints();
@@ -390,13 +354,6 @@ export class GameScene extends Phaser.Scene {
       const net = this.net ? ` | ${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
       this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}`);
       this.minimap.update(this.pos.x, this.pos.y);
-      if (this.clockEl && this.dayNight) {
-        const mins = this.dayNight.gameMinutes;
-        const p = dayPeriod(mins);
-        const h = mins / 60;
-        const icon = h >= 6 && h < 18 ? "\u2600" : "\u263E"; // sol de dia, lua de noite
-        this.clockEl.textContent = `${icon} ${formatClock(mins)} - ${p === "manha" ? "manh\u00e3" : p}`;
-      }
     }
   }
 
@@ -531,25 +488,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private toggleTorch(): void {
-    if (!this.hasTorch) return;
-    this.torchOn = !this.torchOn;
-    this.refreshTorchBtn();
-  }
-
-  private refreshTorchBtn(): void {
-    if (!this.torchBtn) return;
-    this.torchBtn.style.display = this.hasTorch ? "block" : "none";
-    this.torchBtn.style.background = this.torchOn ? "#d9822b" : "#4a4a4a";
-    this.torchBtn.textContent = this.torchOn ? "TOCHA ON" : "TOCHA OFF";
-  }
-
   private applyZoom(): void {
     const { width, height } = this.scale;
     const zoom = Math.min(width, height) / (this.world.tileSize * VISIBLE_TILES_SHORT_SIDE);
-    const z = Phaser.Math.Clamp(zoom, 0.75, 3);
-    this.cameras.main.setZoom(z);
-    this.dayNight?.resize(z);
+    this.cameras.main.setZoom(Phaser.Math.Clamp(zoom, 0.75, 3));
   }
 
   // So mexe nos chunks quando o jogador troca de chunk.
