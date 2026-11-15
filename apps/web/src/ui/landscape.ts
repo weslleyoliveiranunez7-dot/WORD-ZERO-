@@ -6,6 +6,7 @@ const CSS = `
   [data-ui="grid"] { right: auto !important; left: 50% !important; transform: translateX(-50%) !important; grid-template-columns: repeat(6, 46px) !important; bottom: 8px !important; }
   [data-ui="attack"] { right: 16px !important; bottom: 16px !important; }
   [data-ui="collect"] { right: 16px !important; bottom: 100px !important; }
+  [data-ui="torch"] { right: 108px !important; bottom: 84px !important; }
   [data-ui="usebtn"] { right: 108px !important; bottom: 16px !important; }
   [data-ui="craftbtn"] { top: 150px !important; left: 8px !important; }
   [data-ui="buildbtn"] { top: 150px !important; left: 108px !important; }
