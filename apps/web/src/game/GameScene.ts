@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import {
+  BUILD_REACH,
+  type StructureUpdateMsg,
   PLAYER_HALF_SIZE,
   CHUNK_SIZE,
   ChunkedWorld,
@@ -23,6 +25,7 @@ import { NetClient } from "../net/NetClient";
 import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 import { SurvivalUi } from "../ui/SurvivalUi";
+import { BuildUi } from "../ui/BuildUi";
 
 const TILE_COLORS: Record<TileType, number[]> = {
   grass: [0x2f5d34, 0x2a5530], // xadrez leve para o movimento ficar visivel
@@ -47,6 +50,17 @@ export class GameScene extends Phaser.Scene {
   private survivalUi?: SurvivalUi;
   private lootGfx?: Phaser.GameObjects.Graphics; // marcas de recurso esgotado e mochilas (so desenho)
   private actionBtn?: HTMLButtonElement;
+  // Etapa 11: estruturas (so desenho + colisao para a previsao local; o servidor e quem decide tudo)
+  private buildUi?: BuildUi;
+  private structGfx?: Phaser.GameObjects.Graphics;
+  private roofGfx?: Phaser.GameObjects.Graphics;
+  private roofFadeKey = ""; // grupo de telhado em que o jogador esta (fica transparente para ver o interior)
+  private ghostGfx?: Phaser.GameObjects.Graphics;
+  private structRows: StructureUpdateMsg["rows"] = [];
+  private structSolid = new Set<number>();
+  private nearStruct: { tx: number; ty: number; kind: "door" | "chest" } | null = null;
+  private chestAt: { tx: number; ty: number } | null = null;
+  private lastDir = { x: 0, y: 1 }; // ultima direcao andada: define o tile "a frente" onde se constroi
   private attackBtn?: HTMLButtonElement;
   private mobSprites = new Map<number, Phaser.GameObjects.Arc>(); // criaturas (so desenho; posicao vem do servidor)
   private fxCount = 0; // efeitos de combate ao mesmo tempo (limite: protege o A04)
@@ -142,7 +156,35 @@ export class GameScene extends Phaser.Scene {
       });
       document.body.appendChild(atk);
       this.attackBtn = atk;
-      this.net.onInventory = (m) => this.survivalUi?.setInventory(m);
+      this.net.onInventory = (m) => {
+        this.survivalUi?.setInventory(m);
+        this.buildUi?.setInventory(m.slots);
+      };
+      this.structGfx = this.add.graphics().setDepth(7);
+      this.ghostGfx = this.add.graphics().setDepth(8);
+      this.roofGfx = this.add.graphics().setDepth(20); // telhado fica POR CIMA do jogador
+      this.buildUi = new BuildUi();
+      this.buildUi.onPlace = (piece) => {
+        const t = this.frontTile();
+        this.net?.build(piece, t.tx, t.ty);
+      };
+      this.buildUi.onToggle = () => {
+        if (this.nearStruct) this.net?.toggleStructure(this.nearStruct.tx, this.nearStruct.ty);
+      };
+      this.buildUi.onRepair = () => {
+        const t = this.frontTile();
+        this.net?.repair(t.tx, t.ty);
+      };
+      this.buildUi.onTrust = () => this.net?.trust();
+      this.net.onNotice = (m) => this.buildUi?.showNotice(m.text);
+      this.buildUi.onMove = (op, slot) => {
+        if (this.chestAt) this.net?.moveChest(op, this.chestAt.tx, this.chestAt.ty, slot);
+      };
+      this.net.onStructures = (m) => this.setStructures(m);
+      this.net.onChest = (m) => {
+        this.chestAt = { tx: m.tx, ty: m.ty };
+        this.buildUi?.setChest(m);
+      };
       this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
     }
     this.minimap = new Minimap(this.world);
@@ -153,6 +195,8 @@ export class GameScene extends Phaser.Scene {
       this.hud.destroy();
       this.minimap.destroy();
       this.survivalUi?.destroy();
+      this.buildUi?.destroy();
+      this.world.extraSolid = null;
       this.actionBtn?.remove();
       this.attackBtn?.remove();
       this.mobSprites.forEach((m) => m.destroy());
@@ -165,18 +209,113 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // Tile a frente do jogador (so uma SUGESTAO enviada como intencao; o servidor confere alcance, terreno, dono e recursos).
+  private frontTile(): { tx: number; ty: number } {
+    const ts = this.world.tileSize;
+    return { tx: Math.floor(this.pos.x / ts) + this.lastDir.x, ty: Math.floor(this.pos.y / ts) + this.lastDir.y };
+  }
+
+  private setStructures(m: StructureUpdateMsg): void {
+    this.structRows = m.rows;
+    this.structSolid.clear();
+    for (const [tx, ty, , top] of m.rows) if (top === 1 || top === 2 || top === 4 || top === 5) this.structSolid.add(ty * this.world.width + tx);
+    this.world.extraSolid = (tx, ty) => this.structSolid.has(ty * this.world.width + tx); // previsao local igual a do servidor
+    const g = this.structGfx;
+    if (!g) return;
+    const ts = this.world.tileSize;
+    g.clear();
+    for (const [tx, ty, floor, top, mine] of m.rows) {
+      const x = tx * ts;
+      const y = ty * ts;
+      if (floor) g.fillStyle(0x9c8460, 1).fillRect(x, y, ts, ts).lineStyle(1, 0x6b5a3e, 1).strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
+      if (top === 1) g.fillStyle(0x6d4c41, 1).fillRect(x, y, ts, ts).lineStyle(2, 0x3e2a1f, 1).strokeRect(x + 1, y + 1, ts - 2, ts - 2);
+      if (top === 2) g.fillStyle(0xb07a3c, 1).fillRect(x + 2, y + 2, ts - 4, ts - 4).lineStyle(2, 0x5a3a14, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
+      if (top === 3) g.lineStyle(2, 0xb07a3c, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
+      if (top === 4) g.fillStyle(0xd4a017, 1).fillRect(x + 6, y + 9, ts - 12, ts - 16).lineStyle(2, 0x6b5200, 1).strokeRect(x + 6, y + 9, ts - 12, ts - 16);
+      if (top === 5) g.fillStyle(0x9fd8ee, 0.55).fillRect(x + 2, y + 2, ts - 4, ts - 4).lineStyle(3, 0x4a3a2a, 1).strokeRect(x + 2, y + 2, ts - 4, ts - 4);
+      if (mine === 1) g.lineStyle(2, 0x7bdc65, 0.9).strokeRect(x + 1, y + 1, ts - 2, ts - 2);
+      if (mine === 2) g.lineStyle(2, 0x65b8dc, 0.9).strokeRect(x + 1, y + 1, ts - 2, ts - 2); // acesso liberado pelo dono
+    }
+    this.roofFadeKey = "?"; // forca redesenhar o telhado
+    this.drawRoofs();
+  }
+
+  // Telhado: opaco por cima de tudo; o grupo conectado em que o jogador esta fica quase transparente (para ver o interior).
+  private drawRoofs(): void {
+    const g = this.roofGfx;
+    if (!g) return;
+    const ts = this.world.tileSize;
+    const roofs = new Set<number>();
+    for (const [tx, ty, , , , roof] of this.structRows) if (roof) roofs.add(ty * this.world.width + tx);
+    const me = Math.floor(this.pos.y / ts) * this.world.width + Math.floor(this.pos.x / ts);
+    const group = new Set<number>();
+    if (roofs.has(me)) {
+      const stack = [me];
+      while (stack.length > 0) {
+        const k = stack.pop()!;
+        if (group.has(k) || !roofs.has(k)) continue;
+        group.add(k);
+        stack.push(k + 1, k - 1, k + this.world.width, k - this.world.width);
+      }
+    }
+    const key = [...group].sort((a, b) => a - b).join(",") + "|" + roofs.size;
+    if (key === this.roofFadeKey) return;
+    this.roofFadeKey = key;
+    g.clear();
+    for (const k of roofs) {
+      const x = (k % this.world.width) * ts;
+      const y = Math.floor(k / this.world.width) * ts;
+      g.fillStyle(0x8a3b2e, group.has(k) ? 0.2 : 0.95).fillRect(x, y, ts, ts).lineStyle(1, 0x4d1f17, group.has(k) ? 0.2 : 1).strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
+    }
+  }
+
+  // Sombra do tile a frente (com o painel CONSTRUIR aberto), botao PORTA/BAU perto de peca minha, bau fecha ao se afastar.
+  private updateBuildHints(): void {
+    const ts = this.world.tileSize;
+    this.drawRoofs();
+    const gh = this.ghostGfx;
+    if (gh) {
+      gh.clear();
+      if (this.buildUi?.panelOpen && !this.dead) {
+        const t = this.frontTile();
+        gh.lineStyle(2, 0xffffff, 0.8).strokeRect(t.tx * ts + 1, t.ty * ts + 1, ts - 2, ts - 2);
+      }
+    }
+    let best: { tx: number; ty: number; kind: "door" | "chest" } | null = null;
+    let bestD = BUILD_REACH;
+    for (const [tx, ty, , top, mine] of this.structRows) {
+      if (!mine || (top !== 2 && top !== 3 && top !== 4)) continue; // mine: 1 dono, 2 acesso liberado (o servidor confere)
+      const d = Math.hypot(this.pos.x - (tx + 0.5) * ts, this.pos.y - (ty + 0.5) * ts);
+      if (d <= bestD) {
+        bestD = d;
+        best = { tx, ty, kind: top === 4 ? "chest" : "door" };
+      }
+    }
+    this.nearStruct = best;
+    this.buildUi?.setNear(this.dead ? null : (best?.kind ?? null));
+    if (this.chestAt) {
+      const d = Math.hypot(this.pos.x - (this.chestAt.tx + 0.5) * ts, this.pos.y - (this.chestAt.ty + 0.5) * ts);
+      if (d > BUILD_REACH || this.dead) {
+        this.chestAt = null;
+        this.buildUi?.setChest(null);
+      }
+    }
+  }
+
   update(_time: number, delta: number): void {
     const down = (...names: string[]): number => (names.some((n) => this.keys[n]?.isDown) ? 1 : 0);
     let ix = down("d", "right") - down("a", "left") + (this.joystick?.vector.x ?? 0);
     let iy = down("s", "down") - down("w", "up") + (this.joystick?.vector.y ?? 0);
     if (this.dead) ix = iy = 0; // morto nao anda (o servidor tambem nao deixa)
 
+    if (ix !== 0 || iy !== 0) this.lastDir = Math.abs(ix) >= Math.abs(iy) ? { x: Math.sign(ix), y: 0 } : { x: 0, y: Math.sign(iy) };
     const vel = inputToVelocity(ix, iy, PLAYER_SPEED * this.speedMul);
     this.pos = moveWithCollision(this.world, this.pos, vel, delta / 1000);
     this.player.setPosition(this.pos.x, this.pos.y);
     this.player.setVisible(!this.dead);
     this.syncChunks();
     if (this.net) {
+      this.updateBuildHints();
       this.sendInput(ix, iy, delta);
       this.renderRemotes();
     }
