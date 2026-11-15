@@ -192,7 +192,7 @@ export class WorldRoom extends Room {
       }
       if (res.ok) {
         if (m.op !== "toggle" && m.op !== "trust") p.life.invVersion++; // recursos gastos / itens movidos
-        if (res.chest) this.sendChest(client, p, m.tx, m.ty);
+        if (res.chest && m.op !== "trust") this.sendChest(client, p, m.tx, m.ty);
       }
       this.finish(client, p, "REQUEST_BUILD", res);
     });
