@@ -11,5 +11,6 @@ new Phaser.Game({
     width: "100%",
     height: "100%",
   },
+  render: { antialias: false, pixelArt: true, powerPreference: "high-performance" },
   scene: [BootScene, GameScene],
 });
