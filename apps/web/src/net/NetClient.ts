@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
   WORLD_ROOM_NAME,
+  type CombatEventMsg,
   type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type JoinOptions,
@@ -37,6 +38,7 @@ export class NetClient {
   onSnapshot: (s: WorldSnapshot) => void = () => {};
   onPlayerState: (s: PlayerStateMsg) => void = () => {};
   onEntities: (m: EntityUpdateMsg) => void = () => {};
+  onCombat: (m: CombatEventMsg) => void = () => {};
   onInventory: (m: InventoryUpdateMsg) => void = () => {};
   private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
   private client: Client;
@@ -69,6 +71,7 @@ export class NetClient {
     room.onMessage("PLAYER_STATE", (s: PlayerStateMsg) => this.onPlayerState(s));
     room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => this.onInventory(m));
     room.onMessage("ENTITY_UPDATE", (m: EntityUpdateMsg) => this.onEntities(m));
+    room.onMessage("COMBAT_EVENT", (m: CombatEventMsg) => this.onCombat(m)); // so feedback visual: o estado real vem do servidor
     room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
     room.onLeave((code) => {
       if (this.closed) return;
