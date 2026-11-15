@@ -4,13 +4,17 @@ import {
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
   WORLD_ROOM_NAME,
+  type ChestUpdateMsg,
   type CombatEventMsg,
   type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type JoinOptions,
   type PlayerInputMsg,
+  type PieceKind,
   type PlayerStateMsg,
   type RecipeId,
+  type ServerNoticeMsg,
+  type StructureUpdateMsg,
   type WorldSnapshot,
 } from "@worldzero/shared";
 
@@ -41,6 +45,9 @@ export class NetClient {
   onEntities: (m: EntityUpdateMsg) => void = () => {};
   onCombat: (m: CombatEventMsg) => void = () => {};
   onInventory: (m: InventoryUpdateMsg) => void = () => {};
+  onStructures: (m: StructureUpdateMsg) => void = () => {};
+  onChest: (m: ChestUpdateMsg) => void = () => {};
+  onNotice: (m: ServerNoticeMsg) => void = () => {};
   private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
   private client: Client;
   private room?: Room;
@@ -73,6 +80,9 @@ export class NetClient {
     room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => this.onInventory(m));
     room.onMessage("ENTITY_UPDATE", (m: EntityUpdateMsg) => this.onEntities(m));
     room.onMessage("COMBAT_EVENT", (m: CombatEventMsg) => this.onCombat(m)); // so feedback visual: o estado real vem do servidor
+    room.onMessage("STRUCTURE_UPDATE", (m: StructureUpdateMsg) => this.onStructures(m));
+    room.onMessage("SERVER_NOTICE", (m: ServerNoticeMsg) => this.onNotice(m));
+    room.onMessage("CHEST_UPDATE", (m: ChestUpdateMsg) => this.onChest(m));
     room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
     room.onLeave((code) => {
       if (this.closed) return;
@@ -126,6 +136,27 @@ export class NetClient {
 
   craft(recipe: RecipeId): void {
     if (this.status === "online") this.room?.send("REQUEST_CRAFT", { recipe, actionId: ++this.actionId });
+  }
+
+  // Etapa 11: so intencoes (peca/operacao + tile). Dono, alcance, recursos e conteudo do bau sao decididos pelo servidor.
+  build(piece: PieceKind, tx: number, ty: number): void {
+    if (this.status === "online") this.room?.send("REQUEST_BUILD", { op: "place", piece, tx, ty, actionId: ++this.actionId });
+  }
+
+  toggleStructure(tx: number, ty: number): void {
+    if (this.status === "online") this.room?.send("REQUEST_BUILD", { op: "toggle", tx, ty, actionId: ++this.actionId });
+  }
+
+  repair(tx: number, ty: number): void {
+    if (this.status === "online") this.room?.send("REQUEST_BUILD", { op: "repair", tx, ty, actionId: ++this.actionId });
+  }
+
+  trust(): void {
+    if (this.status === "online") this.room?.send("REQUEST_BUILD", { op: "trust", actionId: ++this.actionId });
+  }
+
+  moveChest(op: "deposit" | "withdraw", tx: number, ty: number, slot: number): void {
+    if (this.status === "online") this.room?.send("REQUEST_BUILD", { op, tx, ty, slot, actionId: ++this.actionId });
   }
 
   respawn(): void {
