@@ -1,0 +1,9 @@
+{
+  "name": "WORLD ZERO",
+  "short_name": "WORLD ZERO",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0f0c",
+  "theme_color": "#0b0f0c"
+}
