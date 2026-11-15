@@ -1,5 +1,21 @@
 # Changelog
 
+## Etapa 11 (complemento) - Janela, telhado, reparo e acesso compartilhado
+- Janela: bloqueia a passagem, não a linha de visão (`ChunkedWorld.extraOpaque`). Telhado: camada de cima, só com fundação sua e apoio (parede/porta/janela sua no tile ou ao lado, ou outro telhado seu ao lado); não bloqueia nada e cai antes da fundação. O cliente deixa quase transparente o telhado em que o jogador está.
+- Reparo (só o dono, `REQUEST_BUILD {op:"repair"}`): vida cheia de todas as peças do tile; custa 1 madeira por 25 de vida que faltava (transação).
+- Acesso compartilhado (`{op:"trust"}`): o dono dá ou tira o acesso às suas portas e baús do jogador conectado MAIS PRÓXIMO (até 96 px; o servidor escolhe, o cliente nunca manda id). Máximo de 8 pessoas por dono. Quem tem acesso só abre porta e usa baú: não constrói, não repara. Salvo junto com as bases.
+- Testes: 6 novos em `building.test.ts` (23 de construção, 165 no total); casos novos em `attacker.ts`.
+
+## Etapa 11 - Construção de base
+- Peças: fundação, parede, porta e baú (`shared/building.ts`, custos provisórios em `PIECES`). Um tile tem 1 fundação + 1 peça em cima; parede/porta/baú exigem fundação do próprio jogador.
+- Colisão: parede, baú e porta fechada bloqueiam (`ChunkedWorld.extraSolid`: vale para jogadores, criaturas e linha de visão); fundação e porta aberta não. Nada prende jogador: não se constrói nem se fecha porta em cima de alguém.
+- Dano estrutural: golpe que não acha jogador nem criatura acerta a estrutura mais próxima no alcance da arma (dano da arma x 0,5). Peça de cima cai primeiro, depois a fundação; baú destruído larga o conteúdo como mochila no chão.
+- Só o dono abre/fecha porta e usa o baú; quem não é dono precisa destruir (invasão).
+- Persistência: estruturas (e conteúdo dos baús) salvas em um registro único (`world-structures`) no mesmo armazenamento dos personagens, no máximo a cada 5 s e ao encerrar a sala. Se a leitura falhar ou o dado for inválido/de outra seed, a construção fica DESLIGADA (não grava por cima) e tenta de novo a cada 10 s.
+- Protocolo 7: `REQUEST_BUILD` (place / toggle / deposit / withdraw), `STRUCTURE_UPDATE`, `CHEST_UPDATE`. Cliente: botão CONSTRUIR, botão PORTA/BAÚ perto de peça sua, painel do baú.
+- Testes: 17 novos em `building.test.ts` (159 no total em `shared`); casos novos em `attacker.ts`. Sem passo novo no workflow.
+- Ainda não rodado: servidor real (salvar/reiniciar/recarregar), atacante com os casos novos e cliente no celular.
+
 ## Etapa 10 - Crafting
 - 6 receitas (porrete, bandagem, bancada simples, machado improvisado, picareta simples, lança) em `shared/crafting.ts`. Fabricar é uma transação atômica no servidor: ou consome tudo e entrega o resultado, ou não muda nada. Repetir a mensagem não fabrica de novo (`actionId`), e o tempo da receita deixa o jogador ocupado.
 - Itens novos: bancada, machado, picareta, lança (arma de 28 de dano, alcance 72). Machado/picareta no inventário fazem a coleta render 2 unidades (nunca mais do que resta no recurso).

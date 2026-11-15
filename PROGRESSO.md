@@ -4,6 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-15
+Etapa atual: **Etapa 11 (Construção de base) - código escrito; 23 testes novos de `shared` passam (shim Node, 165 no total); servidor REAL, atacante e cliente AINDA NÃO rodados. Aceite pendente: base permanece após desconexão e REINÍCIO do servidor (precisa de teste real com armazenamento).**
+(Etapa 10 anterior:) o usuário não informou o resultado do workflow antes de pedir a Etapa 11; segue como "escrita".
 Etapa atual: **Etapa 10 (Crafting) - código escrito; 25 testes novos de `shared` passam (shim Node, 142 no total); servidor REAL, atacante e cliente AINDA NÃO rodados.**
 (Etapa 9 anterior:) **Etapa 9 (Combate e PvP) - código escrito; 27 testes novos de `shared` passam (shim Node, 117 no total) e a sala do servidor foi exercitada com um Colyseus de mentira (20 checagens); servidor REAL, `duel.ts` e cliente AINDA NÃO rodados.**
 (Etapa 7 anterior:) **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `shared` passam (shim Node); servidor e cliente AINDA NÃO rodados. Persistência de inventário NÃO feita (ver abaixo).**
@@ -292,4 +294,29 @@ Não é possível duplicar itens por mensagens repetidas. Só marcar como conclu
 Novos: `packages/shared/src/crafting.ts`, `packages/shared/src/crafting.test.ts`
 Alterados: `packages/shared/src/{index,items,inventory,loot,life,protocol,security}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,ui/SurvivalUi.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
 Fora do zip: nada (o workflow não muda: o atacante atualizado já roda no passo "Teste de segurança").
+Apagados: nenhum.
+
+
+## Etapa 11 - Construção de base (escrita, 2026-11-15)
+- `packages/shared/src/building.ts`: `StructureWorld` (lógica pura). `place` (transação: alcance 80 px, terreno = grama, fundação própria para peça em cima, limite de 80 peças por dono, ninguém em cima, recursos tirados de uma cópia do inventário), `toggle` (porta abre/fecha; baú pede o conteúdo), `move` (uma pilha inteira inventário <-> baú, nada some nem duplica), `damage`/`nearest` (dano estrutural), `view` (linhas compactas; só a marca "meu", nunca o dono), `toSave`/`fromSave` (valida tudo de novo).
+- Custos provisórios: fundação 4 madeira + 2 pedra; parede 3 madeira; porta 4 madeira + 1 sucata; baú 5 madeira + 2 sucata. Vida: 120 / 160 / 100 / 80. Baú: 8 slots.
+- `ChunkedWorld.extraSolid` (colisão) e `lineClear` (linha de visão) passam a considerar as estruturas.
+- `PlayerLife.beginBuild`: vivo + `actionId` novo + intervalo mínimo de 250 ms.
+- `inspectBuild` (security.ts): formatos por operação; campo extra = manipulação (peso 5); peça/operação inventada ou coordenada fora de 0..100000 = peso 3.
+- `WorldRoom`: `REQUEST_BUILD`; sem chave de personagem não se constrói (`sem_personagem_salvo`: nada de peça sem dono que possa ser salvo); gancho no `REQUEST_ATTACK` (só quando o golpe seria "miss"); `STRUCTURE_UPDATE` só quando muda (lista inteira, sem filtro por distância); `CHEST_UPDATE` só ao dono perto do baú; carga na criação da sala e salvamento a cada 5 s se mudou.
+- Cliente: `BuildUi.ts` (CONSTRUIR, PORTA/BAÚ, painel do baú), desenho das peças e sombra do tile a frente em `GameScene.ts`; a previsão local de colisão usa a mesma lista.
+
+## Verificado e não verificado (Etapa 11)
+- Verificado (Node 22 + shim do vitest + `tsc`): 17 testes novos passam e os 142 anteriores continuam passando; typecheck de `shared` sem erros; servidor e cliente contra stubs (só os tipos do `shared` conferem).
+- NÃO verificado: `pnpm install`/vitest de verdade; servidor Colyseus REAL (salvar, reiniciar, recarregar as bases); `attacker.ts` com os casos novos; aparência e toque no celular/A04 (botão CONSTRUIR ao lado de FABRICAR, painel do baú, tile "a frente"); desempenho com muitas peças (a lista inteira é reenviada a cada mudança); no Render gratuito sem Supabase o disco some a cada reinício (as bases também: ver HOSPEDAR_SERVIDOR.md).
+- Limitações / NÃO feito / NÃO testado (tudo junto): a base permanecer após REINICIAR o servidor (aceite da etapa) nunca foi provada com o servidor real; janela, telhado, reparo e acesso compartilhado (complemento) só foram testados na lógica pura, nunca no servidor real nem no cliente (telhado transparente, botões REPARAR e DAR/TIRAR ACESSO e o aviso na tela nunca foram vistos); `attacker.ts` com os casos novos nunca rodou; cliente no celular nunca rodou (botão CONSTRUIR ao lado de FABRICAR pode sobrepor algo em tela pequena; painel do baú; tile "a frente"); sem fogueira nem bancada colocável (a bancada continua item carregado); sem desmontar com devolução de recursos; o reparo cobre o tile inteiro (não escolhe a peça); o acesso compartilhado vale para TODAS as portas/baús do dono e só dá para escolher o jogador mais próximo (sem lista de amigos nem nome); sem trava por código; telhado sem regra de interior/clima; criaturas dentro de um tile que vira parede não são empurradas; golpe em estrutura ignora linha de visão (acerta a mais próxima no alcance); sem wipe automático (apagar o registro `world-structures`); sem proteção de base offline.
+
+## Critério de aceite da Etapa 11
+Só marcar como concluída quando: (1) o workflow `Verificar` passar (o atacante atualizado roda no passo "Teste de segurança"), e (2) o usuário, com `SUPABASE_URL`/`SUPABASE_KEY` configurados (ou servidor local), coletar recursos, construir fundação + parede + porta + baú, guardar itens no baú, sair do jogo, REINICIAR o servidor, entrar de novo e ver as peças e o conteúdo do baú; e outro jogador conseguir destruir uma parede a golpes mas não abrir a porta nem o baú.
+
+## Arquivos desta etapa (Etapa 11) - vão no `WORLD-ZERO-etapa11.zip`
+(Complemento janela/telhado/reparo/acesso incluído.)
+Novos: `packages/shared/src/building.ts`, `packages/shared/src/building.test.ts`, `apps/web/src/ui/BuildUi.ts`
+Alterados: `packages/shared/src/{index,chunks,combat,life,protocol,security}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip: nada (o workflow não muda).
 Apagados: nenhum.
