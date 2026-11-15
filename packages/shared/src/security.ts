@@ -1,4 +1,5 @@
-import { parseInput, type PlayerInputMsg, type AttackMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
+import { isRecipeId } from "./crafting";
+import { parseInput, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -107,4 +108,13 @@ export function inspectAttack(raw: unknown): ActionInspection<AttackMsg> {
   const { actionId } = raw as Record<string, unknown>;
   if (!isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
   return { msg: { actionId } };
+}
+
+// Etapa 10: REQUEST_CRAFT so aceita { recipe, actionId } e a receita tem de existir.
+export function inspectCraft(raw: unknown): ActionInspection<CraftMsg> {
+  const bad = inspectKeys(raw, ["recipe", "actionId"]);
+  if (bad) return { msg: null, ...bad };
+  const { recipe, actionId } = raw as Record<string, unknown>;
+  if (!isRecipeId(recipe) || !isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { recipe, actionId } };
 }

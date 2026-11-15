@@ -56,6 +56,36 @@ export class Inventory {
     return true;
   }
 
+  // Etapa 10: remove `qty` unidades de um item, de qualquer slot. Tudo ou nada: false (sem mexer em nada) se nao houver o bastante.
+  removeById(id: ItemId, qty: number): boolean {
+    if (!isItemId(id) || !Number.isInteger(qty) || qty <= 0 || this.count(id) < qty) return false;
+    let left = qty;
+    for (let i = this.slots.length - 1; i >= 0 && left > 0; i--) {
+      const s = this.slots[i];
+      if (s && s.id === id) {
+        const n = Math.min(s.qty, left);
+        s.qty -= n;
+        left -= n;
+        if (s.qty === 0) this.slots[i] = null;
+      }
+    }
+    return true;
+  }
+
+  // Etapa 10: copia independente e "commit" de uma copia (base da transacao: mexe na copia, so aplica se tudo deu certo).
+  clone(): Inventory {
+    const c = new Inventory(this.size);
+    c.copyFrom(this);
+    return c;
+  }
+
+  copyFrom(o: Inventory): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = o.slots[i];
+      this.slots[i] = s ? { id: s.id, qty: s.qty } : null;
+    }
+  }
+
   count(id: ItemId): number {
     let n = 0;
     for (const s of this.slots) if (s && s.id === id) n += s.qty;

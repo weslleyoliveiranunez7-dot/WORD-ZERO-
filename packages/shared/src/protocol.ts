@@ -1,9 +1,10 @@
+import type { RecipeId } from "./crafting";
 import type { ItemStack, Slot } from "./inventory";
 import type { ItemId } from "./items";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 5; // 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 6; // 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -153,4 +154,10 @@ export interface CombatEventMsg {
   x: number; // onde mostrar o efeito (alvo; no "miss", o atacante)
   y: number;
   damage?: number; // dano aplicado (so "hit")
+}
+
+// ---- Etapa 10: fabricar. O cliente so diz QUAL receita quer; ingredientes, bancada, espaco e tempo saem do servidor.
+export interface CraftMsg {
+  recipe: RecipeId;
+  actionId: number;
 }

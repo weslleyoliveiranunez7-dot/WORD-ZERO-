@@ -14,3 +14,4 @@ export * from "./loot";
 export * from "./persist";
 export * from "./mobs";
 export * from "./combat";
+export * from "./crafting";

@@ -15,6 +15,10 @@ export const NODE_RESPAWN_MS = 60_000; // recurso mexido volta ao normal apos es
 export const DROP_TTL_MS = 300_000; // mochila de morte some apos 5 min (valor provisorio)
 export const MAX_DROPS = 200; // limite de mochilas no mundo (protege a memoria)
 
+// Etapa 10: ter a ferramenta no inventario faz cada coleta render 2 unidades (em vez de 1). Decidido so no servidor.
+export const HARVEST_TOOL: Partial<Record<ItemId, ItemId>> = { wood: "axe", stone: "pickaxe", scrap: "pickaxe" };
+export const TOOL_YIELD = 2;
+
 export interface NodeDef {
   item: ItemId;
   max: number; // unidades disponiveis por recurso
@@ -128,11 +132,15 @@ export class LootWorld {
       }
     }
     if (!best) return { ok: false, reason: sawEmpty ? "recurso_esgotado" : "nada_por_perto" };
-    if (inv.add(best.def.item, 1) > 0) return { ok: false, reason: "inventario_cheio" }; // nada foi retirado
+    const tool = HARVEST_TOOL[best.def.item];
+    const want = Math.min(tool && inv.count(tool) > 0 ? TOOL_YIELD : 1, this.remaining(world, best.tx, best.ty));
+    const trial = inv.clone(); // transacao: so aplica se TUDO coube
+    if (trial.add(best.def.item, want) > 0) return { ok: false, reason: "inventario_cheio" }; // nada foi retirado
+    inv.copyFrom(trial);
     const k = `${best.tx},${best.ty}`;
-    this.taken.set(k, { qty: (this.taken.get(k)?.qty ?? 0) + 1, lastMs: nowMs });
+    this.taken.set(k, { qty: (this.taken.get(k)?.qty ?? 0) + want, lastMs: nowMs });
     this.version++;
-    return { ok: true, gained: [{ id: best.def.item, qty: 1 }] };
+    return { ok: true, gained: [{ id: best.def.item, qty: want }] };
   }
 
   // Expira mochilas e devolve recursos ao normal.

@@ -1,5 +1,6 @@
 import type { ChunkedWorld } from "./chunks";
 import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
+import { craftItem } from "./crafting";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
 import { ITEMS } from "./items";
 import { START_VITALS, SurvivalSim } from "./survival";
@@ -28,6 +29,7 @@ export class PlayerLife {
   private lastUseMs = -Infinity;
   private lastInteractMs = -Infinity;
   private lastAttackMs = -Infinity;
+  private craftBusyUntilMs = 0; // Etapa 10: ate quando a fabricacao em andamento ocupa o jogador
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
   graceUntilMs = 0; // Etapa 9: ate quando o jogador esta protegido de OUTROS JOGADORES (so apos reaparecer)
   lastHit: { by: string; atMs: number } | null = null; // Etapa 9: ultimo jogador que causou dano (credito da morte)
@@ -107,6 +109,19 @@ export class PlayerLife {
     return true;
   }
 
+  // Etapa 10: fabricar. `recipe` vem da rede (ja validado por inspectCraft, mas craftItem revalida). Ingredientes e resultado
+  // mudam numa transacao unica; repetir o actionId nunca fabrica 2x; o tempo da receita deixa o jogador ocupado.
+  craft(recipe: unknown, actionId: number, nowMs: number): ActionResult {
+    if (this.dead) return fail("morto", 1);
+    if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
+    if (nowMs < this.craftBusyUntilMs) return fail("em_recarga", 1);
+    const r = craftItem(this.inventory, recipe);
+    if (!r.ok) return fail(r.reason, 0); // faltou ingrediente / bancada / espaco: so avisa, nada mudou
+    this.craftBusyUntilMs = nowMs + r.recipe.craftMs;
+    this.invVersion++;
+    return { ok: true };
+  }
+
   // Etapa 7: coletar recurso ou pegar mochila perto de (px,py), a posicao que o SERVIDOR conhece.
   interact(actionId: number, nowMs: number, world: ChunkedWorld, loot: LootWorld, px: number, py: number): ActionResult {
     if (this.dead) return fail("morto", 1);
@@ -127,6 +142,7 @@ export class PlayerLife {
     this.survival = new SurvivalSim(START_VITALS);
     this.inventory = Inventory.starter();
     this.deadAtMs = null;
+    this.craftBusyUntilMs = 0;
     this.lost = [];
     this.lastHit = null;
     this.graceUntilMs = nowMs + SPAWN_GRACE_MS;
