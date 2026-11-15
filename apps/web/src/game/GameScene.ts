@@ -26,7 +26,7 @@ const VISIBLE_TILES_SHORT_SIDE = 10; // quantos tiles cabem no lado menor da tel
 // Etapa 3: mundo em chunks (gerados por seed), carrega os proximos e descarrega os distantes.
 export class GameScene extends Phaser.Scene {
   private world!: ChunkedWorld;
-  private chunkGfx = new Map<number, Phaser.GameObjects.Graphics>();
+  private chunkImgs = new Map<number, Phaser.GameObjects.Image>();
   private lastChunk = "";
   private minimap!: Minimap;
   private pos!: Vec2;
@@ -83,8 +83,8 @@ export class GameScene extends Phaser.Scene {
       this.joystick?.destroy();
       this.hud.destroy();
       this.minimap.destroy();
-      this.chunkGfx.forEach((g) => g.destroy());
-      this.chunkGfx.clear();
+      this.chunkImgs.forEach((_img, k) => this.removeChunk(k));
+      this.chunkImgs.clear();
     });
   }
 
@@ -127,30 +127,41 @@ export class GameScene extends Phaser.Scene {
     const { loaded, unloaded } = this.world.updateLoaded(this.pos.x, this.pos.y);
     for (const c of unloaded) {
       const k = c.cy * this.world.chunksX + c.cx;
-      this.chunkGfx.get(k)?.destroy();
-      this.chunkGfx.delete(k);
+      this.removeChunk(k);
     }
-    for (const c of loaded) this.chunkGfx.set(c.cy * this.world.chunksX + c.cx, this.drawChunk(c));
+    for (const c of loaded) this.chunkImgs.set(c.cy * this.world.chunksX + c.cx, this.drawChunk(c));
   }
 
-  // Um Graphics estatico por chunk (256 tiles); destruido quando o chunk e descarregado.
-  private drawChunk(chunk: Chunk): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics();
+  private removeChunk(k: number): void {
+    this.chunkImgs.get(k)?.destroy();
+    this.chunkImgs.delete(k);
+    if (this.textures.exists(`chunk-${k}`)) this.textures.remove(`chunk-${k}`);
+  }
+
+  // Desenha o chunk UMA vez num Graphics temporario e converte em textura: depois disso o chunk
+  // custa 1 quadrado por frame (Graphics com ~256 comandos era redesenhado a cada frame = lento no celular).
+  private drawChunk(chunk: Chunk): Phaser.GameObjects.Image {
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     const ts = this.world.tileSize;
     for (let ly = 0; ly < CHUNK_SIZE; ly++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        const tx = chunk.cx * CHUNK_SIZE + lx;
-        const ty = chunk.cy * CHUNK_SIZE + ly;
+        const gx = chunk.cx * CHUNK_SIZE + lx;
+        const gy = chunk.cy * CHUNK_SIZE + ly;
         const type = TILE_ORDER[chunk.tiles[ly * CHUNK_SIZE + lx]];
         const colors = TILE_COLORS[type];
-        g.fillStyle(colors[(tx + ty) % colors.length], 1);
-        g.fillRect(tx * ts, ty * ts, ts, ts);
+        g.fillStyle(colors[(gx + gy) % colors.length], 1);
+        g.fillRect(lx * ts, ly * ts, ts, ts);
         if (type === "tree") {
           g.fillStyle(0x3c7a43, 1);
-          g.fillCircle(tx * ts + ts / 2, ty * ts + ts / 2, ts * 0.38);
+          g.fillCircle(lx * ts + ts / 2, ly * ts + ts / 2, ts * 0.38);
         }
       }
     }
-    return g;
+    const key = `chunk-${chunk.cy * this.world.chunksX + chunk.cx}`;
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const size = CHUNK_SIZE * ts;
+    g.generateTexture(key, size, size);
+    g.destroy();
+    return this.add.image(chunk.cx * size, chunk.cy * size, key).setOrigin(0, 0);
   }
 }
