@@ -6,32 +6,51 @@ import {
   MAX_REJECT_NOTICES_PER_SECOND,
   PROTOCOL_VERSION,
   PlayerGuard,
+  PlayerLife,
   PlayerSim,
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
   inspectInput,
+  inspectRespawn,
+  inspectUseItem,
   parseJoinOptions,
   type ActionRejectedMsg,
+  type ActionResult,
+  type InventoryUpdateMsg,
   type PlayerSnap,
+  type PlayerStateMsg,
   type WorldSnapshot,
 } from "@worldzero/shared";
 
+const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
+const INVENTORY_HEARTBEAT_MS = 2000;
+
 interface PlayerEntry {
   sim: PlayerSim;
+  life: PlayerLife;
   guard: PlayerGuard;
+  connected: boolean; // false durante a janela de reconexao: o tempo de sobrevivencia fica CONGELADO
   lastNotice: number; // ultima vez que avisamos o cliente de uma recusa
   lastLog: Map<string, number>; // motivo -> ultima vez que registramos no log (evita encher o log)
+  lastStateKey: string;
+  lastStateSent: number;
+  lastInvVersion: number;
+  lastInvSent: number;
 }
 
-// Etapa 5: o servidor e a unica fonte de verdade. O cliente so manda intencao (PLAYER_INPUT).
-// Toda mensagem passa por: limite de frequencia -> validacao estrita -> simulacao autoritativa.
+// Etapa 6: alem do movimento, o servidor mantem vida/fome/sede/energia/inventario de cada jogador.
+// O cliente so manda intencoes (PLAYER_INPUT, REQUEST_USE_ITEM, REQUEST_RESPAWN) e recebe o estado pronto.
+// Toda mensagem passa por: limite de frequencia -> validacao estrita -> regra de jogo no servidor.
 export class WorldRoom extends Room {
   private world = new ChunkedWorld(); // mundo de teste 8x8: no maximo 64 chunks em memoria
   private players = new Map<string, PlayerEntry>();
   private tick = 0;
+  private survivalScale = 1;
+  private joined = 0;
 
-  onCreate(options: { maxPlayers?: number }): void {
+  onCreate(options: { maxPlayers?: number; survivalScale?: number }): void {
     this.maxClients = options.maxPlayers ?? this.maxClients;
+    this.survivalScale = options.survivalScale ?? 1;
 
     this.onMessage("PLAYER_INPUT", (client, raw) => {
       const p = this.admit(client);
@@ -41,7 +60,28 @@ export class WorldRoom extends Room {
       else this.violation(client, p, r.reason, r.weight);
     });
 
-    // Qualquer outra mensagem: acoes ainda nao existem (Etapas 6+) ou o tipo e desconhecido.
+    this.onMessage("REQUEST_USE_ITEM", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectUseItem(raw, p.life.inventory.size);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      this.finish(client, p, "REQUEST_USE_ITEM", p.life.useItem(r.msg.slot, r.msg.actionId, Date.now()));
+    });
+
+    this.onMessage("REQUEST_RESPAWN", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectRespawn(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      const res = p.life.respawn(r.msg.actionId, Date.now());
+      if (res.ok) {
+        p.sim.teleport(this.spawnPoint());
+        console.log(`[WorldRoom] reapareceu: ${client.sessionId}`);
+      }
+      this.finish(client, p, "REQUEST_RESPAWN", res);
+    });
+
+    // Qualquer outra mensagem: acao ainda nao existe (Etapas 7+) ou o tipo e desconhecido.
     this.onMessage("*", (client, type) => {
       const p = this.admit(client);
       if (!p) return;
@@ -50,7 +90,7 @@ export class WorldRoom extends Room {
     });
 
     this.setSimulationInterval((dtMs) => this.update(dtMs), 1000 / SERVER_TICK_RATE);
-    console.log(`[WorldRoom] criada (max ${this.maxClients} jogadores, ${SERVER_TICK_RATE} Hz)`);
+    console.log(`[WorldRoom] criada (max ${this.maxClients} jogadores, ${SERVER_TICK_RATE} Hz, tempo de sobrevivencia x${this.survivalScale})`);
   }
 
   onAuth(_client: Client, options: unknown): boolean {
@@ -60,19 +100,33 @@ export class WorldRoom extends Room {
   }
 
   onJoin(client: Client): void {
-    const i = this.players.size;
-    // posicoes iniciais levemente diferentes dentro da area livre do spawn
-    const x = this.world.spawn.x + ((i % 5) - 2) * 20;
-    const y = this.world.spawn.y + ((Math.floor(i / 5) % 5) - 2) * 20;
-    this.players.set(client.sessionId, { sim: new PlayerSim({ x, y }), guard: new PlayerGuard(Date.now()), lastNotice: 0, lastLog: new Map() });
+    this.players.set(client.sessionId, {
+      sim: new PlayerSim(this.spawnPoint()),
+      life: new PlayerLife(),
+      guard: new PlayerGuard(Date.now()),
+      connected: true,
+      lastNotice: 0,
+      lastLog: new Map(),
+      lastStateKey: "",
+      lastStateSent: 0,
+      lastInvVersion: -1,
+      lastInvSent: 0,
+    });
     console.log(`[WorldRoom] entrou: ${client.sessionId} (${this.players.size}/${this.maxClients})`);
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
-    this.players.get(client.sessionId)?.sim.stop();
+    const p = this.players.get(client.sessionId);
+    p?.sim.stop();
+    if (p) p.connected = false; // congela fome/sede/energia enquanto aguarda a reconexao
     if (!consented) {
       try {
         await this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
+        if (p) {
+          p.connected = true;
+          p.lastStateSent = 0; // reenvia o estado completo ao reconectar
+          p.lastInvSent = 0;
+        }
         console.log(`[WorldRoom] reconectou: ${client.sessionId}`);
         return;
       } catch {
@@ -81,6 +135,12 @@ export class WorldRoom extends Room {
     }
     this.players.delete(client.sessionId);
     console.log(`[WorldRoom] saiu: ${client.sessionId} (${this.players.size} restantes)`);
+  }
+
+  // Posicoes iniciais levemente diferentes dentro da area livre do spawn.
+  private spawnPoint(): { x: number; y: number } {
+    const i = this.joined++;
+    return { x: this.world.spawn.x + ((i % 5) - 2) * 20, y: this.world.spawn.y + ((Math.floor(i / 5) % 5) - 2) * 20 };
   }
 
   // Limite de frequencia: chamado em TODA mensagem. Devolve o jogador, ou null se deve ser descartada.
@@ -94,13 +154,20 @@ export class WorldRoom extends Room {
     return p;
   }
 
+  // Resultado de uma acao: recusa vira violacao (peso 0 = so avisa, nao conta ponto). Sucesso atualiza o cliente na hora.
+  private finish(client: Client, p: PlayerEntry, action: string, res: ActionResult): void {
+    if (!res.ok) return this.violation(client, p, res.reason, res.weight);
+    console.log(`[WorldRoom] ${client.sessionId} ${action} ok`);
+    this.sendState(client, p, Date.now(), true);
+  }
+
   private violation(client: Client, p: PlayerEntry, reason: string, weight: number): void {
     const now = Date.now();
     if (now - (p.lastLog.get(reason) ?? 0) >= 1000) {
       p.lastLog.set(reason, now);
-      console.warn(`[seguranca] ${client.sessionId} ${reason} (violacoes: ${p.guard.totalViolations + 1})`);
+      console.warn(`[seguranca] ${client.sessionId} ${reason} (violacoes: ${p.guard.totalViolations + (weight > 0 ? 1 : 0)})`);
     }
-    if (p.guard.penalize(now, weight)) {
+    if (weight > 0 && p.guard.penalize(now, weight)) {
       console.warn(`[seguranca] ${client.sessionId} EXPULSO por comportamento suspeito`);
       this.players.delete(client.sessionId);
       client.leave(KICK_CODE, "comportamento suspeito");
@@ -113,14 +180,57 @@ export class WorldRoom extends Room {
     }
   }
 
+  // Envia PLAYER_STATE e INVENTORY_UPDATE ao DONO quando mudam (ou como batida de coracao).
+  private sendState(client: Client, p: PlayerEntry, now: number, force = false): void {
+    const v = p.life.survival;
+    const state: PlayerStateMsg = {
+      health: Math.ceil(v.health), // ceil: com 0,3 de vida o jogador ainda esta vivo e nao ve "0"
+      hunger: Math.round(v.hunger),
+      thirst: Math.round(v.thirst),
+      energy: Math.round(v.energy),
+      speedMul: Math.round(v.speedMul * 100) / 100,
+      dead: p.life.dead,
+      respawnInMs: p.life.respawnInMs(now),
+      lost: p.life.lost,
+    };
+    const key = `${state.health}|${state.hunger}|${state.thirst}|${state.energy}|${state.speedMul}|${state.dead}`;
+    if (force || key !== p.lastStateKey || now - p.lastStateSent >= STATE_HEARTBEAT_MS) {
+      p.lastStateKey = key;
+      p.lastStateSent = now;
+      client.send("PLAYER_STATE", state);
+    }
+    if (force || p.life.invVersion !== p.lastInvVersion || now - p.lastInvSent >= INVENTORY_HEARTBEAT_MS) {
+      p.lastInvVersion = p.life.invVersion;
+      p.lastInvSent = now;
+      const inv: InventoryUpdateMsg = { slots: p.life.inventory.snapshot() };
+      client.send("INVENTORY_UPDATE", inv);
+    }
+  }
+
   private update(dtMs: number): void {
     const dt = dtMs / 1000;
+    const now = Date.now();
     const snaps: PlayerSnap[] = [];
     for (const [id, p] of this.players) {
-      if (p.sim.step(this.world, dt).corrected) console.error(`[WorldRoom] BUG: movimento de ${id} corrigido pelo servidor`);
-      snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq });
+      if (p.life.dead) p.sim.stop();
+      else {
+        p.sim.speedMul = p.life.survival.speedMul;
+        const x0 = p.sim.x;
+        const y0 = p.sim.y;
+        if (p.sim.step(this.world, dt).corrected) console.error(`[WorldRoom] BUG: movimento de ${id} corrigido pelo servidor`);
+        const moving = Math.hypot(p.sim.x - x0, p.sim.y - y0) > 0.01;
+        if (p.connected && p.life.tick(dt * this.survivalScale, moving, now)) {
+          p.sim.stop();
+          console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens)`);
+        }
+      }
+      snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead });
     }
     const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps };
     this.broadcast("WORLD_SNAPSHOT", snapshot);
+    for (const client of this.clients) {
+      const p = this.players.get(client.sessionId);
+      if (p && p.connected) this.sendState(client, p, now);
+    }
   }
 }
