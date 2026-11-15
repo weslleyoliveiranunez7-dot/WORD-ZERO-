@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   await sleep(1100);
   room.send("REQUEST_ATTACK", { target: "alguem", damage: 9999 }); // Etapa 8: ataque existe, mas campos forjados sao recusados
   await sleep(1100);
-  room.send("REQUEST_BUILD", { piece: "wall" }); // ainda nao implementado (Etapa 11)
+  room.send("REQUEST_PICKUP", {}); // ainda nao implementado (REQUEST_BUILD ja existe desde a Etapa 11)
   await sleep(1100);
   check("mensagem desconhecida recusada", reasons.includes("tipo_desconhecido"), `motivos: ${[...new Set(reasons)].join(",")}`);
   check("acao nao implementada recusada", reasons.includes("acao_nao_implementada"), `motivos: ${[...new Set(reasons)].join(",")}`);
