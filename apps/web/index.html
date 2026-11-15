@@ -9,11 +9,19 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>WORLD ZERO</title>
     <style>
-      html, body, #game { margin: 0; width: 100%; height: 100%; background: #0b0f0c; overflow: hidden; touch-action: none; }
+      html, body { margin: 0; width: 100%; height: 100%; background: #0b0f0c; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+      /* #stage: area de jogo. Em pe (celular) ela fica com proporcao deitada; o tamanho real vem de ui/landscape.ts. */
+      #stage { position: fixed; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0f0c; }
+      #game { width: 100%; height: 100%; }
+      /* #ui: camada da interface (botoes, barras). O transform faz os elementos "fixed" dentro dela seguirem a area de jogo. */
+      #ui { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform: scale(1); transform-origin: 0 0; pointer-events: none; z-index: 5; }
     </style>
   </head>
   <body>
-    <div id="game"></div>
+    <div id="stage">
+      <div id="game"></div>
+      <div id="ui"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
