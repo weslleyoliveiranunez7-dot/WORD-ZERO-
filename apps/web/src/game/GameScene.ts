@@ -4,6 +4,7 @@ import {
   CHUNK_SIZE,
   ChunkedWorld,
   INTERPOLATION_DELAY_MS,
+  PLAYER_SPEED,
   SnapshotBuffer,
   TILE_ORDER,
   inputToVelocity,
@@ -18,6 +19,7 @@ import { Minimap } from "../ui/Minimap";
 import { NetClient } from "../net/NetClient";
 import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
+import { SurvivalUi } from "../ui/SurvivalUi";
 
 const TILE_COLORS: Record<TileType, number[]> = {
   grass: [0x2f5d34, 0x2a5530], // xadrez leve para o movimento ficar visivel
@@ -39,6 +41,10 @@ export class GameScene extends Phaser.Scene {
   private snaps = new SnapshotBuffer();
   private remotes = new Map<string, Phaser.GameObjects.Arc>();
   private synced = false;
+  private survivalUi?: SurvivalUi;
+  private speedMul = 1; // vem do servidor (energia baixa = mais lento)
+  private dead = false; // vem do servidor
+  private deadIds = new Set<string>();
   private seq = 0;
   private lastIx = 0;
   private lastIy = 0;
@@ -93,6 +99,16 @@ export class GameScene extends Phaser.Scene {
     if (data?.online) {
       this.net = new NetClient(getServerUrl());
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
+      this.survivalUi = new SurvivalUi();
+      this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
+      this.survivalUi.onRespawn = () => this.net?.respawn();
+      this.net.onPlayerState = (st) => {
+        if (this.dead && !st.dead) this.synced = false; // reapareceu: assume a posicao do servidor
+        this.dead = st.dead;
+        this.speedMul = st.speedMul;
+        this.survivalUi?.setState(st);
+      };
+      this.net.onInventory = (m) => this.survivalUi?.setInventory(m);
       this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
     }
     this.minimap = new Minimap(this.world);
@@ -102,6 +118,7 @@ export class GameScene extends Phaser.Scene {
       this.joystick?.destroy();
       this.hud.destroy();
       this.minimap.destroy();
+      this.survivalUi?.destroy();
       this.net?.close();
       this.remotes.forEach((r) => r.destroy());
       this.remotes.clear();
@@ -112,12 +129,14 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const down = (...names: string[]): number => (names.some((n) => this.keys[n]?.isDown) ? 1 : 0);
-    const ix = down("d", "right") - down("a", "left") + (this.joystick?.vector.x ?? 0);
-    const iy = down("s", "down") - down("w", "up") + (this.joystick?.vector.y ?? 0);
+    let ix = down("d", "right") - down("a", "left") + (this.joystick?.vector.x ?? 0);
+    let iy = down("s", "down") - down("w", "up") + (this.joystick?.vector.y ?? 0);
+    if (this.dead) ix = iy = 0; // morto nao anda (o servidor tambem nao deixa)
 
-    const vel = inputToVelocity(ix, iy);
+    const vel = inputToVelocity(ix, iy, PLAYER_SPEED * this.speedMul);
     this.pos = moveWithCollision(this.world, this.pos, vel, delta / 1000);
     this.player.setPosition(this.pos.x, this.pos.y);
+    this.player.setVisible(!this.dead);
     this.syncChunks();
     if (this.net) {
       this.sendInput(ix, iy, delta);
@@ -154,6 +173,7 @@ export class GameScene extends Phaser.Scene {
 
   private onSnapshot(snap: WorldSnapshot): void {
     this.snaps.push(performance.now(), snap);
+    this.deadIds = new Set(snap.players.filter((p) => p.dead).map((p) => p.id));
     const me = snap.players.find((p) => p.id === this.net?.sessionId);
     if (!me) return;
     // 1o snapshot: assume a posicao do servidor. Depois: so corrige se divergir muito
@@ -175,6 +195,7 @@ export class GameScene extends Phaser.Scene {
         this.remotes.set(id, r);
       }
       r.setPosition(p.x, p.y);
+      r.setVisible(!this.deadIds.has(id));
     }
     for (const [id, r] of this.remotes) {
       if (!sample.has(id)) {
