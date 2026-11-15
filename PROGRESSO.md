@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-15
-Etapa atual: **Etapa 11 (Construção de base) - código escrito; 23 testes novos de `shared` passam (shim Node, 165 no total); servidor REAL, atacante e cliente AINDA NÃO rodados. Aceite pendente: base permanece após desconexão e REINÍCIO do servidor (precisa de teste real com armazenamento).**
+Etapa atual: **Etapa 12 (Banco e persistência) - código escrito; testes da camada de armazenamento (arquivos) e do executor de migrações passam aqui; PostgreSQL REAL, servidor Colyseus REAL e o teste de reinício AINDA NÃO rodados (o workflow novo roda tudo, com um Postgres de verdade).**
+(Etapa 11 anterior:) **Etapa 11 (Construção de base) - código escrito; 23 testes novos de `shared` passam (shim Node, 165 no total); servidor REAL, atacante e cliente AINDA NÃO rodados. Aceite pendente: base permanece após desconexão e REINÍCIO do servidor (precisa de teste real com armazenamento).**
 (Etapa 10 anterior:) o usuário não informou o resultado do workflow antes de pedir a Etapa 11; segue como "escrita".
 Etapa atual: **Etapa 10 (Crafting) - código escrito; 25 testes novos de `shared` passam (shim Node, 142 no total); servidor REAL, atacante e cliente AINDA NÃO rodados.**
 (Etapa 9 anterior:) **Etapa 9 (Combate e PvP) - código escrito; 27 testes novos de `shared` passam (shim Node, 117 no total) e a sala do servidor foi exercitada com um Colyseus de mentira (20 checagens); servidor REAL, `duel.ts` e cliente AINDA NÃO rodados.**
@@ -47,8 +48,8 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 8 | Zumbis e animais | Escrita; falta o workflow |
 | 9 | Combate e PvP | Escrita; falta o workflow rodar `duel` e testar no celular |
 | 10 | Crafting | Escrita; falta o workflow (atacante atualizado) e testar no celular |
-| 11 | Construção de base | Pendente |
-| 12 | Banco e persistência | Pendente |
+| 11 | Construção de base | Escrita; falta o workflow e o aceite de reiniciar o servidor com as bases |
+| 12 | Banco e persistência | Escrita; falta o workflow (Postgres + reinício) e testar com Supabase/Render |
 | 13 | Servidores e lista | Pendente |
 | 14 | Temporada de 7 dias e wipe | Pendente |
 | 15 | Interface e polimento mobile | Pendente |
@@ -334,3 +335,30 @@ Apagados: nenhum.
 - Cliente: `SnapshotBuffer` repassa `torch`; `DayNight` desenha a tocha na mao e a luz (buraco na escuridao + brilho) de cada jogador com tocha acesa.
 - Versao do protocolo mudou (7 -> 8): cliente e servidor antigos nao entram juntos (esperado).
 - Testes: `torch.test.ts` (5, passam no shim Node); `attacker.ts` ganhou 2 checagens (tocha forjada e pedido invalido). NAO verificado: servidor real, atacante e cliente (a rodar no workflow).
+
+
+## Etapa 12 - Banco e persistência (escrita, 2026-11-15)
+- **PostgreSQL** (`apps/server/src/db/postgres.ts`, pacote `pg`): `DATABASE_URL`. Pool de 5 conexões, SSL automático para banco remoto (`DATABASE_SSL=disable|verify`), 5 tentativas ao ligar (banco "acordando"), timeouts de 8 s. Prioridade do armazenamento: `DATABASE_URL` > Supabase por REST (Etapa 7, mantido) > arquivos (`DATA_DIR`).
+- **Migrações** (`db/migrations.ts`): lista versionada no código (1 `players`, 2 `snapshots` + `audit_logs`, 3 `players.data` tem de ser objeto). Cada uma roda 1 vez numa transação e fica em `schema_migrations` com checksum; editar uma migração já aplicada é recusado (crie outra); lock do banco impede dois servidores migrarem juntos. Roda sozinho ao ligar o servidor.
+- **Salvamento**: autosave de 30 s (já existia) + **gravação por mudança de inventário em até ~2 s** (coleta, fabricação, construção, item usado, baú) + na morte, ao sair e ao desligar. Nunca duas gravações do mesmo personagem ao mesmo tempo (pedido importante que chega no meio fica pendente e roda logo depois). Estruturas: a cada 5 s se mudou (já existia).
+- **Desligamento limpo**: `index.ts` trata SIGTERM/SIGINT (o Render manda SIGTERM ao reiniciar): fecha as salas (grava jogadores e bases, com snapshot "desligamento") e só então fecha o banco; limite de 15 s.
+- **Snapshots** (tabela `snapshots`; arquivos em `DATA_DIR/snapshots/` no modo local): cópia do registro atual na morte, na saída, no desligamento e a cada 10 min (jogador e estruturas). Guarda os 20 mais novos por registro (`SNAPSHOT_KEEP`, 1-500).
+- **Recuperação** (`recovery.ts`): registro atual inválido (jogador ou estruturas) -> procura o snapshot mais novo que passa na MESMA validação do carregamento (`parseSave` / `StructureWorld.fromSave`), guarda o quebrado como snapshot `invalido_antes_de_restaurar`, regrava o recuperado e registra na auditoria. Sem snapshot válido: jogador começa de novo (o quebrado fica guardado como snapshot) e as estruturas continuam DESLIGADAS (nada é sobrescrito), como antes.
+- **Auditoria** (`audit_logs`): `entrou`, `saiu`, `morte` (itens perdidos, quem matou), `save_invalido`, `personagem_recuperado`, `personagem_sem_recuperacao`, `estruturas_invalidas`, `estruturas_recuperadas`. Gravada sem travar o jogo; erro só vai ao log. Modo arquivos: `DATA_DIR/audit.log`. Sem retenção automática ainda.
+- **Backup**: `pnpm --filter @worldzero/server backup [export arquivo.json | import arquivo.json]` (estado atual de todos os registros; import em transação). `backups/` está no `.gitignore`. Para backup do banco inteiro (inclui snapshots e auditoria) use o `pg_dump`/backup do provedor (ver HOSPEDAR_SERVIDOR.md).
+- Segurança: ids só `[A-Za-z0-9_-]{1,100}` (nunca viram caminho de arquivo nem SQL sem parâmetro); SQL sempre com parâmetros; a chave secreta do jogador continua sem ser guardada (só o hash); RLS ligado nas tabelas (para o Supabase).
+- Testes novos: `src/persistcheck.ts` (camada de armazenamento: ida e volta, "reinício" = fechar e reabrir, snapshots e retenção, recuperação pulando snapshot inválido, 30 gravações simultâneas, auditoria, backup/restauração, id perigoso, migrações repetidas/alteradas) e `src/restart.ts` (servidor REAL ligado/desligado: queda brusca SIGKILL, SIGTERM, registro quebrado -> recuperado). Workflow: 3 passos novos + serviço `postgres:16` (entregue como `verificar.yml`).
+
+## Verificado e não verificado (Etapa 12)
+- Verificado aqui (Node + `tsc` com stub do `pg`): typecheck de `store.ts`, `db/*`, `recovery.ts`, `backup.ts` e `persistcheck.ts`; `persistcheck` com arquivos: 15 checagens OK; executor de migrações contra um banco de mentira: aplica em ordem, 2ª vez não reaplica, migração alterada é recusada, falha faz rollback, versões fora de ordem são recusadas.
+- NÃO verificado: `pnpm install` (o `pg` e o `@types/pg` são novos; o lockfile muda); `PostgresStore` contra um PostgreSQL real (SQL escrito sem rodar: o passo "Teste de persistência" do workflow é quem prova); typecheck de `WorldRoom.ts`/`index.ts`/`restart.ts` contra o Colyseus real; `restart.ts` (usa `node --import tsx`, SIGKILL/SIGTERM e `colyseus.js`; suposições a confirmar no workflow); `gracefulShutdown(false)` e a opção `gracefulShutdown: false` do Colyseus 0.15 (suposição); SSL com Supabase/Render Postgres; desempenho com muitos jogadores gravando (a gravação por mudança limita a 1 a cada 2 s por jogador, mas não foi medida).
+- Limitações / NÃO feito: sem backup automático agendado (só manual + snapshots dentro do banco); snapshots ficam no MESMO banco (se o banco for perdido, o snapshot vai junto: faça `backup export` ou use o backup do provedor); sem retenção/limpeza da auditoria; sem modo "somente leitura" quando o banco cai no meio (jogadores já conectados continuam e tentam regravar; quem tenta ENTRAR com o banco fora é recusado, código 4004); `Supabase por REST` não tem snapshots, auditoria nem backup (use `DATABASE_URL` — o Supabase também dá uma string de conexão); mochilas de morte, recursos esgotados e criaturas continuam sem ser salvos; um único registro grande para todas as estruturas.
+
+## Critério de aceite da Etapa 12
+"Reiniciar servidor não apaga progresso confirmado." Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de persistência" e os dois "Teste de reinício" (todos OK), e (2) o usuário configurar `DATABASE_URL` no Render (Supabase ou outro Postgres), jogar, fazer um Manual Deploy/Restart do serviço e ver o personagem e as bases como estavam; nos logs: `personagens salvos em: postgres`.
+
+## Arquivos desta etapa (Etapa 12) - vão no `WORLD-ZERO-etapa12.zip`
+Novos: `apps/server/src/{recovery,backup,persistcheck,restart}.ts`, `apps/server/src/db/{types,migrations,postgres}.ts`
+Alterados: `apps/server/src/{store,index}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/server/package.json`, `.gitignore`, `.env.example`, `render.yaml`, `HOSPEDAR_SERVIDOR.md`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (serviço `postgres` + 3 passos novos).
+Apagados: nenhum.

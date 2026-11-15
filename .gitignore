@@ -12,3 +12,5 @@ apps/web/android/app/build/
 apps/web/android/.gradle/
 # dados de jogadores salvos em arquivo (servidor local)
 data/
+# backups manuais (tem estado dos jogadores: nunca versionar)
+backups/

@@ -1,5 +1,14 @@
 # Changelog
 
+## Etapa 12 - Banco e persistência
+- PostgreSQL (`DATABASE_URL`) com migrações versionadas e checksum (`players`, `snapshots`, `audit_logs`, `schema_migrations`); aplicadas sozinhas ao ligar o servidor, com lock contra dois servidores migrando juntos.
+- Salvamento: autosave de 30 s + gravação em até ~2 s após mudança de inventário + morte, saída e desligamento; uma gravação por vez por personagem.
+- Desligamento limpo (SIGTERM/SIGINT): fecha as salas, grava tudo e fecha o banco.
+- Snapshots (morte, saída, desligamento, a cada 10 min; 20 por registro) e recuperação automática de personagem ou estruturas inválidos a partir do snapshot válido mais novo.
+- Auditoria de eventos críticos (`entrou`, `saiu`, `morte`, recuperações). Backup/restauração manual (`pnpm --filter @worldzero/server backup`).
+- Testes: `persistcheck.ts` (armazenamento, snapshots, recuperação, backup, migrações) e `restart.ts` (servidor real: queda brusca, desligamento normal, registro quebrado); workflow com serviço `postgres:16`.
+- Ainda não rodado: PostgreSQL real, servidor Colyseus real e `restart.ts` (ver PROGRESSO.md).
+
 ## Dia e noite, tocha e visual (2026-11-15)
 - Protocolo v8: `REQUEST_TORCH` + `PlayerSnap.torch`: a tocha acesa aparece para todos os jogadores (decidida pelo servidor).
 - `shared/daynight.ts`: horario do jogo como funcao do relogio (1 dia = 24 min reais); escuridao maxima as 03:00; transicao suave (smoothstep). 5 testes novos.
