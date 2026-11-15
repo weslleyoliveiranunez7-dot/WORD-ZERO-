@@ -9,19 +9,24 @@
     "bot": "tsx src/bot.ts",
     "attack": "tsx src/attacker.ts",
     "survivor": "tsx src/survivor.ts",
-    "duel": "tsx src/duel.ts"
+    "duel": "tsx src/duel.ts",
+    "backup": "tsx src/backup.ts",
+    "persistcheck": "tsx src/persistcheck.ts",
+    "restart": "tsx src/restart.ts"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.15.0",
     "@worldzero/shared": "workspace:*",
     "colyseus": "^0.15.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "colyseus.js": "^0.15.0",
     "tsx": "^4.19.2",
-    "typescript": "~5.6.3",
-    "colyseus.js": "^0.15.0"
+    "typescript": "~5.6.3"
   }
 }
