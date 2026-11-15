@@ -11,3 +11,4 @@ export * from "./inventory";
 export * from "./survival";
 export * from "./life";
 export * from "./loot";
+export * from "./persist";

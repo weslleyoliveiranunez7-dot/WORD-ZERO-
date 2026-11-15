@@ -36,7 +36,10 @@ export const RECONNECT_WINDOW_SECONDS = 15; // servidor guarda o jogador por 15 
 
 export interface JoinOptions {
   protocol: number;
+  key?: string; // Etapa 7: chave secreta do personagem (gerada no aparelho); sem ela nada e salvo
 }
+
+export const PLAYER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 export interface PlayerInputMsg {
   seq: number; // contador crescente por cliente
@@ -69,8 +72,10 @@ export function parseInput(raw: unknown): PlayerInputMsg | null {
 
 export function parseJoinOptions(raw: unknown): JoinOptions | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { protocol } = raw as Record<string, unknown>;
-  return typeof protocol === "number" ? { protocol } : null;
+  const { protocol, key } = raw as Record<string, unknown>;
+  if (typeof protocol !== "number") return null;
+  if (key === undefined) return { protocol };
+  return typeof key === "string" && PLAYER_KEY_PATTERN.test(key) ? { protocol, key } : null;
 }
 
 // Resposta do servidor quando recusa uma mensagem/acao (enviada no maximo 1x por segundo por jogador).
