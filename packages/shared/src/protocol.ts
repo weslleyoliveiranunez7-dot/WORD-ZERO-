@@ -174,9 +174,11 @@ export interface CraftMsg {
 // ---- Etapa 11: construcao. O cliente so diz O QUE quer fazer e ONDE (tile); dono, alcance, recursos, espaco e colisao saem do servidor.
 export type BuildMsg =
   | { op: "place"; actionId: number; piece: PieceKind; tx: number; ty: number }
-  | { op: "toggle" | "repair"; actionId: number; tx: number; ty: number } // toggle: porta abre/fecha, bau pede o conteudo; repair: so o dono
+  | { op: "toggle"; actionId: number; tx: number; ty: number } // porta abre/fecha, bau pede o conteudo
+  | { op: "repair"; actionId: number; tx: number; ty: number } // so o dono
   | { op: "trust"; actionId: number } // da/tira o acesso do jogador MAIS PROXIMO (o servidor escolhe quem)
-  | { op: "deposit" | "withdraw"; actionId: number; tx: number; ty: number; slot: number }; // uma pilha inteira por vez
+  | { op: "deposit"; actionId: number; tx: number; ty: number; slot: number } // uma pilha inteira por vez
+  | { op: "withdraw"; actionId: number; tx: number; ty: number; slot: number };
 
 // Servidor -> dono: todas as estruturas. Linha = [tx, ty, fundacao, topo, acesso, telhado]; topo: 0 nada, 1 parede, 2 porta fechada, 3 porta aberta, 4 bau, 5 janela; acesso: 0 nenhum, 1 dono, 2 liberado.
 export interface StructureUpdateMsg {
