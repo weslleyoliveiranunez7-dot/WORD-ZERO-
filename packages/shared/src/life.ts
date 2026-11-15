@@ -10,6 +10,10 @@ import { START_VITALS, SurvivalSim } from "./survival";
 export const USE_COOLDOWN_MS = 500; // tempo minimo entre dois consumos
 export const ATTACK_COOLDOWN_MS = 700; // tempo minimo entre dois golpes
 export const RESPAWN_DELAY_MS = 5000; // tempo minimo morto antes de poder reaparecer
+// Etapa 9: protecao CURTA contra outros jogadores logo apos reaparecer (evita matar quem acabou de nascer, em loop).
+// Nao e invulnerabilidade permanente: acaba sozinha e acaba na hora se o protegido atacar. 0 desliga.
+export const SPAWN_GRACE_MS = 3000;
+export const KILL_CREDIT_MS = 15_000; // quem causou o ultimo dano recebe o credito da morte se ela vier em ate este tempo
 
 export type ActionResult = { ok: true } | { ok: false; reason: string; weight: number };
 const fail = (reason: string, weight: number): ActionResult => ({ ok: false, reason, weight });
@@ -25,6 +29,8 @@ export class PlayerLife {
   private lastInteractMs = -Infinity;
   private lastAttackMs = -Infinity;
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
+  graceUntilMs = 0; // Etapa 9: ate quando o jogador esta protegido de OUTROS JOGADORES (so apos reaparecer)
+  lastHit: { by: string; atMs: number } | null = null; // Etapa 9: ultimo jogador que causou dano (credito da morte)
 
   get dead(): boolean {
     return this.deadAtMs !== null;
@@ -76,13 +82,29 @@ export class PlayerLife {
     return { ok: true };
   }
 
-  // Etapa 8: autoriza UM golpe (vivo, id novo, fora de recarga). Quem acha o alvo e causa o dano e o servidor.
-  startAttack(actionId: number, nowMs: number): ActionResult {
-    if (this.dead) return fail("morto", 1);
+  // Etapa 8/9: autoriza UM golpe (vivo, id novo, fora de recarga). Quem acha o alvo e causa o dano e o servidor.
+  // A recarga vem da arma (decidida pelo servidor, nunca pelo cliente). Atacar encerra a protecao de reaparecimento.
+  startAttack(actionId: number, nowMs: number, cooldownMs: number = ATTACK_COOLDOWN_MS): ActionResult {
+    if (this.dead || this.survival.dead) return fail("morto", 1);
     if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
-    if (nowMs - this.lastAttackMs < ATTACK_COOLDOWN_MS) return fail("em_recarga", 1);
+    if (nowMs - this.lastAttackMs < cooldownMs) return fail("em_recarga", 1);
     this.lastAttackMs = nowMs;
+    this.graceUntilMs = 0;
     return { ok: true };
+  }
+
+  inGrace(nowMs: number): boolean {
+    return nowMs < this.graceUntilMs;
+  }
+
+  // Etapa 9: dano de OUTRO JOGADOR. false = ignorado (ja morto, ja com vida zerada neste tick, protegido ou valor invalido).
+  // "Vida zerada neste tick" conta como morto: dois golpes no mesmo instante nao dao dano nem credito duplicado.
+  takeHit(amount: number, byId: string, nowMs: number): boolean {
+    if (this.dead || this.survival.dead || this.inGrace(nowMs)) return false;
+    if (!Number.isFinite(amount) || amount <= 0) return false;
+    this.survival.damage(amount);
+    this.lastHit = { by: byId, atMs: nowMs };
+    return true;
   }
 
   // Etapa 7: coletar recurso ou pegar mochila perto de (px,py), a posicao que o SERVIDOR conhece.
@@ -106,6 +128,8 @@ export class PlayerLife {
     this.inventory = Inventory.starter();
     this.deadAtMs = null;
     this.lost = [];
+    this.lastHit = null;
+    this.graceUntilMs = nowMs + SPAWN_GRACE_MS;
     this.invVersion++;
     return { ok: true };
   }

@@ -85,7 +85,7 @@ describe("criaturas (Etapa 8)", () => {
       }
     }
     expect(kills).toBe(1);
-    expect(drops).toBe(2);
+    expect(drops).toBe(MOBS.zombie.drops.length); // rng 0: cai tudo da tabela (Etapa 9 acrescentou o porrete)
     expect(mw.nearest(sx, sy)).toBeNull();
     run(mw, [{ id: "A", x: sx + 5000, y: sy }], 100, 1000 + MOB_RESPAWN_MS);
     expect(z.state).not.toBe("dead");

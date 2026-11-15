@@ -1,10 +1,10 @@
 // Etapa 6: definicoes de itens (Documento Mestre 4.4). Fonte unica de verdade: o servidor decide o que
 // cada item faz; o cliente so mostra nome/icone. Nunca confiar em nome, quantidade ou efeito vindos da rede.
 
-export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar", "wood", "stone", "scrap", "raw_meat"] as const;
+export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar", "wood", "stone", "scrap", "raw_meat", "club"] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
-export type ItemCategory = "food" | "drink" | "medical" | "resource";
+export type ItemCategory = "food" | "drink" | "medical" | "resource" | "weapon";
 
 // Todos os medidores vao de 0 a 100 (100 = cheio / saudavel).
 export interface VitalEffects {
@@ -14,6 +14,13 @@ export interface VitalEffects {
   energy?: number;
 }
 
+// Etapa 9: o que uma arma faz. So o servidor le isto para decidir dano, alcance e recarga.
+export interface WeaponStats {
+  damage: number; // vida tirada por golpe que acerta
+  reach: number; // px: distancia maxima atacante -> alvo (posicoes que o SERVIDOR conhece)
+  cooldownMs: number; // tempo minimo entre dois golpes
+}
+
 export interface ItemDef {
   id: ItemId;
   name: string;
@@ -21,6 +28,7 @@ export interface ItemDef {
   weight: number; // kg (ainda nao limita nada; entra com a regra de peso)
   maxStack: number;
   effects: VitalEffects; // efeito de CONSUMIR 1 unidade
+  weapon?: WeaponStats; // Etapa 9: se existir, o item e arma (usada automaticamente: a de maior dano no inventario)
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -33,6 +41,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   wood: { id: "wood", name: "Madeira", category: "resource", weight: 1, maxStack: 10, effects: {} },
   stone: { id: "stone", name: "Pedra", category: "resource", weight: 1.5, maxStack: 10, effects: {} },
   scrap: { id: "scrap", name: "Sucata", category: "resource", weight: 0.8, maxStack: 10, effects: {} },
+  // Etapa 9: primeira arma (corpo a corpo). Valores provisorios, balancear depois de jogar.
+  club: { id: "club", name: "Porrete", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 20, reach: 52, cooldownMs: 800 } },
 };
 
 export function isItemId(v: unknown): v is ItemId {

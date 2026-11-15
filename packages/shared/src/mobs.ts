@@ -15,7 +15,7 @@ export const ACTIVE_RADIUS_PX = 640; // so simula criaturas a ate esta distancia
 export const MOB_RESPAWN_MS = 60_000;
 export const MOB_RESPAWN_CLEAR_PX = 300; // nao renasce com jogador por perto
 export const PLAYER_ATTACK_REACH_PX = 48;
-export const PLAYER_ATTACK_DAMAGE = 10; // punho (armas entram na Etapa 9)
+export const PLAYER_ATTACK_DAMAGE = 10; // punho (armas: items.ts, Etapa 9)
 const MAX_STEP = 0.05;
 
 interface DropRule {
@@ -37,7 +37,7 @@ export interface MobDef {
 }
 
 export const MOBS: Record<MobKind, MobDef> = {
-  zombie: { hp: 40, speed: 80, sense: 220, lose: 380, attackRange: 26, attackDmg: 8, attackCdMs: 1000, wanderRadius: 120, drops: [{ id: "scrap", min: 1, max: 2, chance: 0.6 }, { id: "bandage", min: 1, max: 1, chance: 0.15 }] },
+  zombie: { hp: 40, speed: 80, sense: 220, lose: 380, attackRange: 26, attackDmg: 8, attackCdMs: 1000, wanderRadius: 120, drops: [{ id: "scrap", min: 1, max: 2, chance: 0.6 }, { id: "bandage", min: 1, max: 1, chance: 0.15 }, { id: "club", min: 1, max: 1, chance: 0.08 }] },
   deer: { hp: 16, speed: 120, sense: 150, lose: 0, attackRange: 0, attackDmg: 0, attackCdMs: 0, wanderRadius: 160, drops: [{ id: "raw_meat", min: 1, max: 2, chance: 1 }] },
 };
 
@@ -174,12 +174,13 @@ export class MobWorld {
     return hits;
   }
 
-  // Criatura viva mais proxima de (x,y) dentro do alcance.
-  nearest(x: number, y: number, reach: number = PLAYER_ATTACK_REACH_PX): Mob | null {
+  // Criatura viva mais proxima de (x,y) dentro do alcance. `canSee` (opcional, Etapa 9): descarta quem esta atras de parede/arvore.
+  nearest(x: number, y: number, reach: number = PLAYER_ATTACK_REACH_PX, canSee?: (m: Mob) => boolean): Mob | null {
     let best: Mob | null = null;
     let bestD = reach;
     for (const m of this.mobs) {
       if (m.state === "dead") continue;
+      if (canSee && !canSee(m)) continue;
       const d = Math.hypot(m.x - x, m.y - y);
       if (d <= bestD) {
         best = m;

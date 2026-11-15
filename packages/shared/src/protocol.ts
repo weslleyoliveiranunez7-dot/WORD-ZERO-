@@ -1,8 +1,9 @@
 import type { ItemStack, Slot } from "./inventory";
+import type { ItemId } from "./items";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 4; // 4 = Etapa 8 (mobs no snapshot, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 5; // 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -103,6 +104,7 @@ export interface PlayerStateMsg {
   dead: boolean;
   respawnInMs: number; // quando morto: tempo que falta para poder reaparecer
   lost: ItemStack[]; // quando morto: o que foi perdido
+  weapon: ItemId | null; // Etapa 9: arma que o SERVIDOR usa nos seus golpes (null = punho)
 }
 
 export interface InventoryUpdateMsg {
@@ -138,4 +140,17 @@ export interface EntityUpdateMsg {
 // Etapa 8: ataque corpo a corpo. Sem alvo na mensagem: o servidor escolhe a criatura mais proxima ao alcance.
 export interface AttackMsg {
   actionId: number;
+}
+
+// ---- Etapa 9: eventos de combate (servidor -> todos), so para FEEDBACK visual. Nao muda nenhum estado:
+// vida, morte e loot vem pelo PLAYER_STATE / snapshot / ENTITY_UPDATE. O cliente nunca "confirma" dano por aqui.
+export type CombatEventKind = "hit" | "miss" | "kill";
+export interface CombatEventMsg {
+  kind: CombatEventKind;
+  attacker: string; // sessionId de quem atacou
+  victim?: string; // sessionId do jogador atingido (ausente se o alvo foi criatura ou se errou)
+  mobId?: number; // id da criatura atingida
+  x: number; // onde mostrar o efeito (alvo; no "miss", o atacante)
+  y: number;
+  damage?: number; // dano aplicado (so "hit")
 }
