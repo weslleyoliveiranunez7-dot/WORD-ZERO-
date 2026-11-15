@@ -8,7 +8,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join as pathJoin } from "node:path";
 import { Client, Room } from "colyseus.js";
 import { PROTOCOL_VERSION, WORLD_ROOM_NAME, type InventoryUpdateMsg } from "@worldzero/shared";
 import { createStore, keyToId } from "./store";
@@ -85,7 +85,7 @@ async function join(key: string): Promise<Session> {
 
 async function main(): Promise<void> {
   const useDb = !!process.env.DATABASE_URL;
-  const dir = useDb ? undefined : await mkdtemp(join(tmpdir(), "wz-restart-"));
+  const dir = useDb ? undefined : await mkdtemp(pathJoin(tmpdir(), "wz-restart-"));
   const env: NodeJS.ProcessEnv = useDb ? {} : { DATA_DIR: dir, DATABASE_URL: "" };
   console.log(`armazenamento do teste: ${useDb ? "PostgreSQL (DATABASE_URL)" : `arquivos em ${dir}`}`);
   const key = randomBytes(24).toString("base64url"); // 32 caracteres [A-Za-z0-9_-]
