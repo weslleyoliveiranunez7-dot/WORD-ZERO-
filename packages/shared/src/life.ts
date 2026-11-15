@@ -8,6 +8,7 @@ import { START_VITALS, SurvivalSim } from "./survival";
 // Logica pura (o relogio entra por parametro) para testar sem rede. O cliente nunca altera nada daqui.
 
 export const USE_COOLDOWN_MS = 500; // tempo minimo entre dois consumos
+export const ATTACK_COOLDOWN_MS = 700; // tempo minimo entre dois golpes
 export const RESPAWN_DELAY_MS = 5000; // tempo minimo morto antes de poder reaparecer
 
 export type ActionResult = { ok: true } | { ok: false; reason: string; weight: number };
@@ -22,6 +23,7 @@ export class PlayerLife {
   private lastActionId = -1;
   private lastUseMs = -Infinity;
   private lastInteractMs = -Infinity;
+  private lastAttackMs = -Infinity;
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
 
   get dead(): boolean {
@@ -71,6 +73,15 @@ export class PlayerLife {
     this.inventory.removeFromSlot(slot, 1);
     this.lastUseMs = nowMs;
     this.invVersion++;
+    return { ok: true };
+  }
+
+  // Etapa 8: autoriza UM golpe (vivo, id novo, fora de recarga). Quem acha o alvo e causa o dano e o servidor.
+  startAttack(actionId: number, nowMs: number): ActionResult {
+    if (this.dead) return fail("morto", 1);
+    if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
+    if (nowMs - this.lastAttackMs < ATTACK_COOLDOWN_MS) return fail("em_recarga", 1);
+    this.lastAttackMs = nowMs;
     return { ok: true };
   }
 

@@ -12,3 +12,4 @@ export * from "./survival";
 export * from "./life";
 export * from "./loot";
 export * from "./persist";
+export * from "./mobs";
