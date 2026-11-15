@@ -5,8 +5,11 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { PROTOCOL_VERSION, WORLD_ROOM_NAME } from "@worldzero/shared";
 import { loadConfig } from "./config";
 import { WorldRoom } from "./rooms/WorldRoom";
+import { createStore } from "./store";
 
 const config = loadConfig();
+const store = createStore();
+console.log(`[server] personagens salvos em: ${store.kind}`);
 
 const app = express();
 app.get("/health", (_req, res) => {
@@ -18,7 +21,7 @@ const gameServer = new Server({
   // maxPayload: o servidor fecha a conexao de quem envia mensagem maior que 2 KB (as legitimas tem ~30 bytes)
   transport: new WebSocketTransport({ server: createServer(app), maxPayload: 2048 }),
 });
-gameServer.define(WORLD_ROOM_NAME, WorldRoom, { maxPlayers: config.maxPlayers, survivalScale: config.survivalScale });
+gameServer.define(WORLD_ROOM_NAME, WorldRoom, { maxPlayers: config.maxPlayers, survivalScale: config.survivalScale, store });
 
 gameServer
   .listen(config.port)
