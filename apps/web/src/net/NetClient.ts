@@ -4,8 +4,10 @@ import {
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
   WORLD_ROOM_NAME,
+  type InventoryUpdateMsg,
   type JoinOptions,
   type PlayerInputMsg,
+  type PlayerStateMsg,
   type WorldSnapshot,
 } from "@worldzero/shared";
 
@@ -17,6 +19,9 @@ export class NetClient {
   sessionId = "";
   lastError = "";
   onSnapshot: (s: WorldSnapshot) => void = () => {};
+  onPlayerState: (s: PlayerStateMsg) => void = () => {};
+  onInventory: (m: InventoryUpdateMsg) => void = () => {};
+  private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
   private client: Client;
   private room?: Room;
   private token = "";
@@ -43,6 +48,9 @@ export class NetClient {
     this.token = room.reconnectionToken;
     this.status = "online";
     room.onMessage("WORLD_SNAPSHOT", (s: WorldSnapshot) => this.onSnapshot(s));
+    room.onMessage("PLAYER_STATE", (s: PlayerStateMsg) => this.onPlayerState(s));
+    room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => this.onInventory(m));
+    room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
     room.onLeave((code) => {
       if (this.closed) return;
       if (code === KICK_CODE) {
@@ -73,6 +81,15 @@ export class NetClient {
 
   sendInput(msg: PlayerInputMsg): void {
     if (this.status === "online") this.room?.send("PLAYER_INPUT", msg);
+  }
+
+  // Intencoes: o servidor decide se vale (vivo? item existe? cooldown?) e responde com o estado novo.
+  useItem(slot: number): void {
+    if (this.status === "online") this.room?.send("REQUEST_USE_ITEM", { slot, actionId: ++this.actionId });
+  }
+
+  respawn(): void {
+    if (this.status === "online") this.room?.send("REQUEST_RESPAWN", { actionId: ++this.actionId });
   }
 
   close(): void {
