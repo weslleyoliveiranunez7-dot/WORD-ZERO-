@@ -1,4 +1,5 @@
 import { ITEMS, Inventory, RECIPES, RECIPE_IDS, missingFor, type InventoryUpdateMsg, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
+import { uiRoot } from "./landscape";
 
 // Etapa 6: barras de vida/fome/sede/energia, inventario e tela de morte (DOM, fora do canvas).
 // Esta classe SO MOSTRA o que o servidor mandou e devolve "intencoes" (usar slot, reaparecer).
@@ -43,7 +44,7 @@ export class SurvivalUi {
 
   constructor() {
     this.root = div({ position: "fixed", inset: "0", pointerEvents: "none", zIndex: "15", font: "12px monospace", color: "#fff" });
-    document.body.appendChild(this.root);
+    uiRoot().appendChild(this.root);
 
     // barras (abaixo do HUD de depuracao)
     const bars = div({ position: "absolute", top: "40px", left: "8px", width: "150px", display: "flex", flexDirection: "column", gap: "3px" }, this.root);

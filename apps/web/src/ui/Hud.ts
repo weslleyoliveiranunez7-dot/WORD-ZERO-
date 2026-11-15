@@ -1,3 +1,5 @@
+import { uiRoot } from "./landscape";
+
 // Texto de depuracao no canto da tela (DOM, fora do canvas, nao sofre zoom da camera).
 export class Hud {
   private el: HTMLDivElement;
@@ -16,7 +18,7 @@ export class Hud {
       pointerEvents: "none",
       zIndex: "20",
     });
-    document.body.appendChild(this.el);
+    uiRoot().appendChild(this.el);
   }
 
   setText(text: string): void {

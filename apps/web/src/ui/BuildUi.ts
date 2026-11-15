@@ -1,4 +1,5 @@
 import { BUILD_REACH, ITEMS, PIECES, PIECE_KINDS, type ChestUpdateMsg, type PieceKind, type Slot } from "@worldzero/shared";
+import { uiRoot } from "./landscape";
 
 // Etapa 11: botoes e paineis de construcao (DOM). So MOSTRA o que o servidor mandou e devolve INTENCOES
 // (qual peca, abrir/fechar, mover uma pilha). Nada aqui decide custo, dono, alcance ou conteudo de bau.
@@ -25,7 +26,7 @@ export class BuildUi {
 
   constructor() {
     css(this.root, { position: "fixed", inset: "0", pointerEvents: "none", zIndex: "16", font: "12px monospace", color: "#fff" });
-    document.body.appendChild(this.root);
+    uiRoot().appendChild(this.root);
     this.btn.textContent = "CONSTRUIR";
     css(this.btn, { position: "absolute", top: "170px", left: "108px", font: "bold 12px monospace", padding: "8px 12px", borderRadius: "6px", border: "1px solid #fff", background: "rgba(80,60,20,0.85)", color: "#fff", pointerEvents: "auto", touchAction: "manipulation" });
     this.btn.onclick = (): void => {

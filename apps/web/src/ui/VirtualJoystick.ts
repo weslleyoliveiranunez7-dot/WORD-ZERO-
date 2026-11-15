@@ -1,6 +1,9 @@
 // Joystick virtual flutuante (DOM + Pointer Events).
 // Aparece onde o dedo toca, na metade esquerda de baixo da tela.
 // vector.x / vector.y vao de -1 a 1.
+// As coordenadas ficam no espaco da interface (#ui), que pode estar reduzida por escala e deslocada na tela.
+
+import { uiRoot, uiScale } from "./landscape";
 
 const BASE_SIZE = 112;
 const THUMB_SIZE = 52;
@@ -26,6 +29,7 @@ export class VirtualJoystick {
       width: "55%",
       height: "65%",
       zIndex: "10",
+      pointerEvents: "auto",
       touchAction: "none",
       userSelect: "none",
       webkitUserSelect: "none",
@@ -55,8 +59,8 @@ export class VirtualJoystick {
     });
     this.base.appendChild(this.thumb);
 
-    document.body.appendChild(this.zone);
-    document.body.appendChild(this.base);
+    uiRoot().appendChild(this.zone);
+    uiRoot().appendChild(this.base);
 
     this.zone.addEventListener("pointerdown", this.onDown);
     this.zone.addEventListener("pointermove", this.onMove);
@@ -69,9 +73,9 @@ export class VirtualJoystick {
     if (this.activeId !== null) return;
     this.activeId = e.pointerId;
     this.zone.setPointerCapture(e.pointerId);
-    this.origin = { x: e.clientX, y: e.clientY };
-    this.base.style.left = `${e.clientX - BASE_SIZE / 2}px`;
-    this.base.style.top = `${e.clientY - BASE_SIZE / 2}px`;
+    this.origin = this.local(e);
+    this.base.style.left = `${this.origin.x - BASE_SIZE / 2}px`;
+    this.base.style.top = `${this.origin.y - BASE_SIZE / 2}px`;
     this.base.style.display = "block";
     this.update(e);
   };
@@ -88,9 +92,17 @@ export class VirtualJoystick {
     this.base.style.display = "none";
   };
 
+  // Posicao do toque no espaco da interface (desconta o deslocamento e a escala de #ui).
+  private local(e: PointerEvent): { x: number; y: number } {
+    const r = uiRoot().getBoundingClientRect();
+    const k = uiScale();
+    return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k };
+  }
+
   private update(e: PointerEvent): void {
-    const dx = e.clientX - this.origin.x;
-    const dy = e.clientY - this.origin.y;
+    const p = this.local(e);
+    const dx = p.x - this.origin.x;
+    const dy = p.y - this.origin.y;
     const dist = Math.hypot(dx, dy);
     const k = dist > MAX_DISTANCE ? MAX_DISTANCE / dist : 1;
     const ox = dx * k;

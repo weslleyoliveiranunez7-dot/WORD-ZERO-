@@ -1,4 +1,5 @@
 import { CHUNK_SIZE, REGION_COLORS, TILE_SIZE, regionAt, type ChunkedWorld } from "@worldzero/shared";
+import { uiRoot } from "./landscape";
 
 // Minimapa inicial: uma celula por chunk (cor da regiao), chunks carregados mais claros, ponto do jogador.
 export class Minimap {
@@ -21,7 +22,7 @@ export class Minimap {
       zIndex: "20",
       opacity: "0.92",
     });
-    document.body.appendChild(this.canvas);
+    uiRoot().appendChild(this.canvas);
     this.ctx = this.canvas.getContext("2d")!;
   }
 
