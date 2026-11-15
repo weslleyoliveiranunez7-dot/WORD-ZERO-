@@ -17,6 +17,16 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", protocol: PROTOCOL_VERSION, maxPlayers: config.maxPlayers });
 });
 
+// TEMPORARIO: diagnostico do armazenamento. Remover depois.
+app.get("/diag", async (_req, res) => {
+  try {
+    await store.load("0".repeat(64));
+    res.json({ armazenamento: store.kind, ok: true });
+  } catch (e) {
+    res.json({ armazenamento: store.kind, ok: false, erro: String(e) });
+  }
+});
+
 const gameServer = new Server({
   // maxPayload: o servidor fecha a conexao de quem envia mensagem maior que 2 KB (as legitimas tem ~30 bytes)
   transport: new WebSocketTransport({ server: createServer(app), maxPayload: 2048 }),
