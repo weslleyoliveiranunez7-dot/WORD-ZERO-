@@ -5,7 +5,7 @@ import type { ItemId } from "./items";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 7; // 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 8; // 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -17,6 +17,7 @@ export const CLIENT_MESSAGES = [
   "REQUEST_INVENTORY_MOVE",
   "REQUEST_USE_ITEM",
   "REQUEST_RESPAWN",
+  "REQUEST_TORCH",
 ] as const;
 
 export const SERVER_MESSAGES = [
@@ -58,6 +59,7 @@ export interface PlayerSnap {
   y: number;
   seq: number; // ultimo input processado deste jogador (usado na reconciliacao, Etapa 5)
   dead: boolean; // Etapa 6: jogador morto (o cliente esconde o boneco)
+  torch?: boolean; // tocha acesa na mao (so aparece quando true; o SERVIDOR decide: pedido do jogador E tocha no inventario E vivo)
 }
 
 // Etapa 8: criatura acordada (perto de algum jogador). k: 0 = zumbi, 1 = cervo. hp em % (1..100).
@@ -122,6 +124,10 @@ export interface UseItemMsg {
 }
 export interface RespawnMsg {
   actionId: number;
+}
+// Pedido de acender/apagar a tocha. E so uma preferencia: sem tocha no inventario nada acende.
+export interface TorchMsg {
+  on: boolean;
 }
 
 // ---- Etapa 7: coleta e loot ----

@@ -1,6 +1,6 @@
 import { isPieceKind } from "./building";
 import { isRecipeId } from "./crafting";
-import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
+import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type TorchMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -83,6 +83,15 @@ export function inspectUseItem(raw: unknown, slots: number): ActionInspection<Us
   const { slot, actionId } = raw as Record<string, unknown>;
   if (!isInt(slot, 0, slots - 1) || !isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
   return { msg: { slot, actionId } };
+}
+
+// REQUEST_TORCH so aceita { on: boolean }.
+export function inspectTorch(raw: unknown): ActionInspection<TorchMsg> {
+  const bad = inspectKeys(raw, ["on"]);
+  if (bad) return { msg: null, ...bad };
+  const { on } = raw as Record<string, unknown>;
+  if (typeof on !== "boolean") return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { on } };
 }
 
 export function inspectRespawn(raw: unknown): ActionInspection<RespawnMsg> {

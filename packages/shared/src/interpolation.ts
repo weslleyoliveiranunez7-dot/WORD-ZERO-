@@ -3,6 +3,7 @@ import type { PlayerSnap, WorldSnapshot } from "./protocol";
 export interface Sampled {
   x: number;
   y: number;
+  torch?: boolean; // tocha acesa (so existe quando true)
 }
 
 // Guarda os ultimos snapshots (com a hora em que CHEGARAM no cliente) e devolve a posicao
@@ -41,7 +42,9 @@ export class SnapshotBuffer {
     const k = b.t === a.t ? 1 : Math.min(1, Math.max(0, (renderTimeMs - a.t) / (b.t - a.t)));
     for (const [id, pb] of b.byId) {
       const pa = a.byId.get(id);
-      out.set(id, pa ? { x: pa.x + (pb.x - pa.x) * k, y: pa.y + (pb.y - pa.y) * k } : { x: pb.x, y: pb.y });
+      const s: Sampled = pa ? { x: pa.x + (pb.x - pa.x) * k, y: pa.y + (pb.y - pa.y) * k } : { x: pb.x, y: pb.y };
+      if (pb.torch) s.torch = true;
+      out.set(id, s);
     }
     return out;
   }
