@@ -15,7 +15,8 @@ app.get("/health", (_req, res) => {
 });
 
 const gameServer = new Server({
-  transport: new WebSocketTransport({ server: createServer(app) }),
+  // maxPayload: o servidor fecha a conexao de quem envia mensagem maior que 2 KB (as legitimas tem ~30 bytes)
+  transport: new WebSocketTransport({ server: createServer(app), maxPayload: 2048 }),
 });
 gameServer.define(WORLD_ROOM_NAME, WorldRoom, { maxPlayers: config.maxPlayers });
 
