@@ -9,6 +9,9 @@ import {
   PlayerGuard,
   PlayerLife,
   PlayerSim,
+  applySave,
+  makeSave,
+  parseSave,
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
   inspectInput,
@@ -21,13 +24,17 @@ import {
   type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type PlayerSnap,
+  type PlayerSave,
   type PlayerStateMsg,
   type WorldSnapshot,
 } from "@worldzero/shared";
+import { keyToId, type PlayerStore } from "../store";
 
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
 const INVENTORY_HEARTBEAT_MS = 2000;
 const LOOT_HEARTBEAT_MS = 2000;
+const AUTOSAVE_MS = 30_000;
+const DUPLICATE_SESSION_CODE = 4002;
 
 interface PlayerEntry {
   sim: PlayerSim;
@@ -42,6 +49,9 @@ interface PlayerEntry {
   lastInvSent: number;
   lastLootVersion: number;
   lastLootSent: number;
+  keyId?: string; // hash da chave do jogador (sem chave = nada e salvo)
+  lastSave: number;
+  saving: boolean;
 }
 
 // Etapa 6: alem do movimento, o servidor mantem vida/fome/sede/energia/inventario de cada jogador.
@@ -54,8 +64,11 @@ export class WorldRoom extends Room {
   private tick = 0;
   private survivalScale = 1;
   private joined = 0;
+  private store?: PlayerStore;
+  private activeKeys = new Map<string, string>(); // keyId -> sessionId (um personagem so entra uma vez por vez)
 
-  onCreate(options: { maxPlayers?: number; survivalScale?: number }): void {
+  onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore }): void {
+    this.store = options.store;
     this.maxClients = options.maxPlayers ?? this.maxClients;
     this.survivalScale = options.survivalScale ?? 1;
 
@@ -109,16 +122,44 @@ export class WorldRoom extends Room {
     console.log(`[WorldRoom] criada (max ${this.maxClients} jogadores, ${SERVER_TICK_RATE} Hz, tempo de sobrevivencia x${this.survivalScale})`);
   }
 
-  onAuth(_client: Client, options: unknown): boolean {
+  // Valida a versao, recusa personagem ja conectado e carrega o save (se houver). Falha de leitura: recusa a entrada
+  // (entrar "zerado" e depois salvar por cima apagaria o personagem de verdade).
+  async onAuth(_client: Client, options: unknown): Promise<{ keyId?: string; save?: PlayerSave }> {
     const join = parseJoinOptions(options);
     if (!join || join.protocol !== PROTOCOL_VERSION) throw new ServerError(4001, "versao de protocolo incompativel");
-    return true;
+    if (!join.key || !this.store) return {};
+    const keyId = keyToId(join.key);
+    const other = this.activeKeys.get(keyId);
+    if (other && this.players.has(other)) throw new ServerError(DUPLICATE_SESSION_CODE, "personagem ja esta conectado");
+    let raw: unknown | null;
+    try {
+      raw = await this.store.load(keyId);
+    } catch (e) {
+      console.error("[WorldRoom] falha ao carregar personagem", e);
+      throw new ServerError(4004, "armazenamento indisponivel");
+    }
+    const save = raw === null ? undefined : (parseSave(raw) ?? undefined);
+    if (raw !== null && !save) console.error(`[WorldRoom] save invalido ignorado (${keyId.slice(0, 8)})`);
+    return { keyId, save };
   }
 
-  onJoin(client: Client): void {
+  onJoin(client: Client, _options: unknown, auth?: { keyId?: string; save?: PlayerSave }): void {
+    const keyId = auth?.keyId;
+    const other = keyId ? this.activeKeys.get(keyId) : undefined;
+    if (keyId && other && this.players.has(other)) {
+      client.leave(DUPLICATE_SESSION_CODE, "personagem ja esta conectado"); // duas entradas simultaneas: a segunda perde
+      return;
+    }
+    const life = new PlayerLife();
+    let start = this.spawnPoint();
+    if (auth?.save) {
+      applySave(life, auth.save);
+      const { x, y } = auth.save;
+      if (x !== undefined && y !== undefined && !this.world.isSolid(Math.floor(x / this.world.tileSize), Math.floor(y / this.world.tileSize))) start = { x, y };
+    }
     this.players.set(client.sessionId, {
-      sim: new PlayerSim(this.spawnPoint()),
-      life: new PlayerLife(),
+      sim: new PlayerSim(start),
+      life,
       guard: new PlayerGuard(Date.now()),
       connected: true,
       lastNotice: 0,
@@ -129,8 +170,12 @@ export class WorldRoom extends Room {
       lastInvSent: 0,
       lastLootVersion: -1,
       lastLootSent: 0,
+      keyId,
+      lastSave: Date.now(),
+      saving: false,
     });
-    console.log(`[WorldRoom] entrou: ${client.sessionId} (${this.players.size}/${this.maxClients})`);
+    if (keyId) this.activeKeys.set(keyId, client.sessionId);
+    console.log(`[WorldRoom] entrou: ${client.sessionId}${auth?.save ? " (personagem restaurado)" : ""} (${this.players.size}/${this.maxClients})`);
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
@@ -152,8 +197,34 @@ export class WorldRoom extends Room {
         /* tempo esgotado: remove abaixo */
       }
     }
-    this.players.delete(client.sessionId);
+    this.release(client.sessionId);
     console.log(`[WorldRoom] saiu: ${client.sessionId} (${this.players.size} restantes)`);
+  }
+
+  // Salva sem travar o jogo: uma gravacao por vez por jogador; erro so vai para o log.
+  private async persist(p: PlayerEntry): Promise<void> {
+    if (!p.keyId || !this.store || p.saving) return;
+    p.saving = true;
+    p.lastSave = Date.now();
+    try {
+      await this.store.save(p.keyId, makeSave(p.life, p.sim.x, p.sim.y));
+    } catch (e) {
+      console.error("[WorldRoom] falha ao salvar personagem", e);
+    } finally {
+      p.saving = false;
+    }
+  }
+
+  private release(sessionId: string): void {
+    const p = this.players.get(sessionId);
+    if (!p) return;
+    void this.persist(p);
+    if (p.keyId && this.activeKeys.get(p.keyId) === sessionId) this.activeKeys.delete(p.keyId);
+    this.players.delete(sessionId);
+  }
+
+  async onDispose(): Promise<void> {
+    for (const p of this.players.values()) await this.persist(p);
   }
 
   // Posicoes iniciais levemente diferentes dentro da area livre do spawn.
@@ -188,7 +259,7 @@ export class WorldRoom extends Room {
     }
     if (weight > 0 && p.guard.penalize(now, weight)) {
       console.warn(`[seguranca] ${client.sessionId} EXPULSO por comportamento suspeito`);
-      this.players.delete(client.sessionId);
+      this.release(client.sessionId);
       client.leave(KICK_CODE, "comportamento suspeito");
       return;
     }
@@ -248,9 +319,11 @@ export class WorldRoom extends Room {
         if (p.connected && p.life.tick(dt * this.survivalScale, moving, now)) {
           p.sim.stop();
           this.loot.addDrop(p.sim.x, p.sim.y, p.life.lost, now); // mochila no local da morte (outros podem pegar)
+          void this.persist(p); // salva ja: sem isso, reiniciar o servidor devolveria os itens que estao na mochila
           console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens)`);
         }
       }
+      if (p.connected && now - p.lastSave >= AUTOSAVE_MS) void this.persist(p);
       snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead });
     }
     const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps };
