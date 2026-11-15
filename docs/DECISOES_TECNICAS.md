@@ -34,3 +34,5 @@
 - Mochila de loot na morte e baús saqueáveis: regra aprovada, implementar na Etapa 7 (e baús depois); falta definir por quanto tempo a mochila fica no chão.
 - Tamanho de chunk e do mundo (após medir, Etapa 3).
 - Fonte de assets com licença.
+
+- Etapa 7 (provisório): mochila de morte dura 5 min (DROP_TTL_MS); recurso volta em 60 s; persistência de inventário depende de definir identidade do jogador (conta/token).
