@@ -11,7 +11,7 @@ const BARS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; col
   { key: "energy", label: "Energia", color: "#d8cf3a" },
 ];
 
-const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫" };
+const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩" };
 
 const div = (style: Partial<CSSStyleDeclaration>, parent?: HTMLElement): HTMLDivElement => {
   const el = document.createElement("div");
