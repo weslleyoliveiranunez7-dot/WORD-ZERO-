@@ -1,5 +1,13 @@
 # Changelog
 
+## Etapa 10 - Crafting
+- 6 receitas (porrete, bandagem, bancada simples, machado improvisado, picareta simples, lança) em `shared/crafting.ts`. Fabricar é uma transação atômica no servidor: ou consome tudo e entrega o resultado, ou não muda nada. Repetir a mensagem não fabrica de novo (`actionId`), e o tempo da receita deixa o jogador ocupado.
+- Itens novos: bancada, machado, picareta, lança (arma de 28 de dano, alcance 72). Machado/picareta no inventário fazem a coleta render 2 unidades (nunca mais do que resta no recurso).
+- Protocolo 6: `REQUEST_CRAFT {recipe, actionId}` validado de forma estrita (campo extra ou receita inventada = manipulação).
+- Cliente: botão FABRICAR com a lista de receitas (verde = dá para fazer).
+- Testes: 25 novos em `crafting.test.ts` (142 no total em `shared`); casos novos em `attacker.ts`. Sem passo novo no workflow.
+- Ainda não rodado: servidor real, atacante com os casos novos e cliente no celular (ver PROGRESSO.md).
+
 ## Etapa 9 - Combate e PvP
 - Golpe de jogador contra jogador e contra criatura decidido 100% no servidor (`performAttack` em `shared/combat.ts`): atacante vivo, `actionId` novo, recarga DA ARMA, alvo mais próximo com alcance e linha de visão, vítima viva e sem proteção, dano.
 - Arma simples: porrete (`club`, 20 de dano, alcance 52, recarga 800 ms), largado por zumbis (8%). O servidor usa a arma de maior dano do inventário; sem arma, punho (10 / 48 / 700 ms). O cliente não escolhe arma, alvo nem dano.

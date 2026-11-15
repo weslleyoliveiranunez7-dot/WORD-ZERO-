@@ -4,9 +4,11 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-15
-Etapa atual: **Etapa 9 (Combate e PvP) - código escrito; 27 testes novos de `shared` passam (shim Node, 117 no total) e a sala do servidor foi exercitada com um Colyseus de mentira (20 checagens); servidor REAL, `duel.ts` e cliente AINDA NÃO rodados.**
+Etapa atual: **Etapa 10 (Crafting) - código escrito; 25 testes novos de `shared` passam (shim Node, 142 no total); servidor REAL, atacante e cliente AINDA NÃO rodados.**
+(Etapa 9 anterior:) **Etapa 9 (Combate e PvP) - código escrito; 27 testes novos de `shared` passam (shim Node, 117 no total) e a sala do servidor foi exercitada com um Colyseus de mentira (20 checagens); servidor REAL, `duel.ts` e cliente AINDA NÃO rodados.**
 (Etapa 7 anterior:) **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `shared` passam (shim Node); servidor e cliente AINDA NÃO rodados. Persistência de inventário NÃO feita (ver abaixo).**
 (Etapa 6 anterior:) **Etapa 6 (Personagem e sobrevivência) - código escrito; lógica de `shared` testada em Node (31 testes novos, 69 no total); servidor, atacante, survivor e cliente AINDA NÃO rodados**
+(Etapas 7, 8 e 9: o usuário não informou o resultado do workflow antes de pedir a Etapa 10; seguem como "escritas".)
 (Etapas 7 e 8: o usuário não informou o resultado do workflow antes de pedir a Etapa 9; seguem como "escritas".)
 (Decisões do usuário em 2026-11-14: itens da morte viram loot no local, baús futuros também saqueáveis por outros jogadores; kit inicial ao reaparecer aprovado. Loot entra na Etapa 7.)
 (Etapa 5: usuário pediu "Etapa 6" ao enviar o repositório; o resultado do workflow da Etapa 5 não foi informado, então ela segue como "escrita" até o passo "Teste de segurança" ser visto verde.)
@@ -42,7 +44,7 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 7 | Coleta e loot (+ persistência de inventário) | Escrita; falta o workflow e testar em 2 aparelhos |
 | 8 | Zumbis e animais | Escrita; falta o workflow |
 | 9 | Combate e PvP | Escrita; falta o workflow rodar `duel` e testar no celular |
-| 10 | Crafting | Pendente |
+| 10 | Crafting | Escrita; falta o workflow (atacante atualizado) e testar no celular |
 | 11 | Construção de base | Pendente |
 | 12 | Banco e persistência | Pendente |
 | 13 | Servidores e lista | Pendente |
@@ -199,7 +201,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 9 entregue em `WORLD-ZERO-etapa9.zip` + `verificar.yml` novo (passo "Teste de combate PvP"). Se o workflow falhar, o usuário cola o erro do log no chat. Depois de aprovada: Etapa 10 (crafting; o porrete passa a poder ser fabricado e a troca de arma pode entrar junto).
+3. Etapa 9 entregue em `WORLD-ZERO-etapa9.zip` + `verificar.yml` novo (passo "Teste de combate PvP"). Se o workflow falhar, o usuário cola o erro do log no chat. Etapa 10 entregue em `WORLD-ZERO-etapa10.zip` (NÃO precisa mudar o `verificar.yml`). Depois de aprovada: Etapa 11 (construção de base; a bancada vira peça colocável).
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.
@@ -264,4 +266,30 @@ O servidor decide o resultado e impede dano fora das regras. Só marcar como con
 Novos: `packages/shared/src/combat.ts`, `packages/shared/src/combat.test.ts`, `apps/server/src/duel.ts`
 Alterados: `packages/shared/src/{index,items,life,mobs,mobs.test,protocol}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/server/package.json`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,ui/SurvivalUi.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `README.md`, `docs/DECISOES_TECNICAS.md`
 Fora do zip (editar à mão): `.github/workflows/verificar.yml` (novo passo "Teste de combate PvP").
+Apagados: nenhum.
+
+
+## Etapa 10 - Crafting (escrita, 2026-11-15)
+- `packages/shared/src/crafting.ts`: 6 receitas (valores provisórios). Porrete = 3 madeira; bandagem = 2 sucata -> 2 bandagens; bancada simples = 6 madeira + 2 sucata; machado improvisado = 3 madeira + 2 pedra; picareta simples = 3 madeira + 3 pedra; lança = 2 madeira + 1 pedra. Machado, picareta e lança exigem ter a bancada NO INVENTÁRIO (não é gasta).
+- `craftItem` é uma TRANSAÇÃO: trabalha numa cópia do inventário (`Inventory.clone`/`copyFrom`/`removeById`), tira os ingredientes, tenta entregar o resultado e só então aplica. Falta de ingrediente, de bancada ou de espaço = nada muda. Os ingredientes liberam espaço antes da entrega.
+- `PlayerLife.craft(recipe, actionId, now)`: vivo -> `actionId` novo (repetir nunca fabrica 2x) -> não estar ocupado -> transação. O tempo da receita (`craftMs`) deixa o jogador ocupado: nova fabricação antes disso = `em_recarga`. Falha por ingrediente não ocupa o jogador.
+- Itens novos: `workbench`, `axe`, `pickaxe`, `spear` (lança: 28 de dano, alcance 72, recarga 900 ms; o servidor já a escolhe sozinho por ser a arma de maior dano). Categoria nova `tool`.
+- Ferramentas de coleta (`HARVEST_TOOL` em `loot.ts`): com machado no inventário, árvore rende 2 madeiras por coleta; com picareta, pedra/sucata rendem 2. Nunca mais do que resta no recurso; sem espaço para as 2 unidades, nada é retirado (também em transação).
+- Protocolo 6: `REQUEST_CRAFT {recipe, actionId}` validado por `inspectCraft` (só esses 2 campos; receita tem de existir; campo extra = manipulação, peso 5). O cliente nunca manda quantidade, ingredientes nem resultado. A resposta é o `INVENTORY_UPDATE` de sempre.
+- Salvar/carregar: os itens novos entram sozinhos na validação (`parseSave`), 2 ferramentas no mesmo slot continuam sendo recusadas.
+- Cliente: botão FABRICAR (abaixo das barras, à esquerda) abre a lista de receitas (verde = parece que dá, cinza = falta algo; só ajuda visual, o servidor sempre refaz a conta). Tocar numa receita manda a intenção.
+- `attacker.ts`: fabricar com campos extras / receita inventada (`ouro`, `__proto__`) / `actionId` inválido / sem ingredientes (nada aparece no inventário).
+
+## Verificado e não verificado (Etapa 10)
+- Verificado (Node 22 + shim do vitest + `tsc`): 142 testes de `shared` passam (25 novos em `crafting.test.ts`: receitas válidas, `isRecipeId` com `__proto__`/`constructor`, transação (falta o último ingrediente, sem bancada, inventário cheio, ingredientes que liberam slot), `craft` com replay de `actionId`, tempo da receita, morto, 3.000 pedidos hostis com conta de itens fechando, `inspectCraft`, lança como melhor arma, salvar/carregar, machado/picareta na coleta). Typecheck de `shared` sem erros; servidor e cliente contra stubs (só os tipos do `shared` conferem; o resto do erro é ruído dos stubs).
+- NÃO verificado: servidor Colyseus REAL com `REQUEST_CRAFT`; `attacker.ts` rodando com os casos novos; `pnpm install`/vitest de verdade; aparência e toque do botão/painel FABRICAR no celular/A04 (posição esquerda, abaixo das barras: pode sobrepor algo em telas pequenas); balanceamento das receitas.
+- Limitações / NÃO feito: sem tocha (não há ciclo dia/noite ainda); sem fogueira, parede, porta e baú (são da Etapa 11); a bancada é "item que se carrega" (na Etapa 11 vira peça colocada e a receita passa a exigir estar perto dela); sem animação/barra de progresso (só o tempo de ocupado no servidor); sem desfazer/cancelar; sem durabilidade das ferramentas; sem mover itens entre slots.
+
+## Critério de aceite da Etapa 10
+Não é possível duplicar itens por mensagens repetidas. Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de segurança" (atacante com os casos de `REQUEST_CRAFT`), e (2) o usuário, no celular, coletar madeira/pedra/sucata, fabricar a bancada, um machado e uma lança, ver o inventário mudar, ver que a lança passa a ser a "Arma:" do HUD e que o machado faz a árvore render 2 madeiras.
+
+## Arquivos desta etapa (Etapa 10) - vão no `WORLD-ZERO-etapa10.zip`
+Novos: `packages/shared/src/crafting.ts`, `packages/shared/src/crafting.test.ts`
+Alterados: `packages/shared/src/{index,items,inventory,loot,life,protocol,security}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,ui/SurvivalUi.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip: nada (o workflow não muda: o atacante atualizado já roda no passo "Teste de segurança").
 Apagados: nenhum.
