@@ -38,6 +38,11 @@ export class BuildUi {
     this.useBtn.onclick = (): void => this.onToggle();
     css(this.chestBox, { position: "absolute", inset: "60px 12px auto 12px", maxWidth: "340px", margin: "0 auto", display: "none", padding: "8px", background: "rgba(20,15,5,0.92)", border: "2px solid #c9a227", borderRadius: "8px", pointerEvents: "auto", maxHeight: "70%", overflowY: "auto" });
     css(this.toast, { position: "absolute", top: "130px", left: "50%", transform: "translateX(-50%)", maxWidth: "80%", padding: "6px 10px", background: "rgba(0,0,0,0.8)", border: "1px solid #c9a227", borderRadius: "6px", display: "none", textAlign: "center" });
+    this.btn.dataset.ui = "buildbtn";
+    this.panel.dataset.ui = "buildpanel";
+    this.useBtn.dataset.ui = "usebtn";
+    this.chestBox.dataset.ui = "chest";
+    this.toast.dataset.ui = "toast";
     this.root.append(this.btn, this.panel, this.useBtn, this.chestBox, this.toast);
     this.refresh();
   }

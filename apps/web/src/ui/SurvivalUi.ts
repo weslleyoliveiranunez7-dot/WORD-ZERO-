@@ -65,9 +65,12 @@ export class SurvivalUi {
       this.root,
     );
 
+    this.grid.dataset.ui = "grid";
+
     // Etapa 10: botao FABRICAR (abaixo das barras, lado esquerdo) e lista de receitas. So mostra; quem fabrica e o servidor.
     this.craftBtn = document.createElement("button");
     this.craftBtn.textContent = "FABRICAR";
+    this.craftBtn.dataset.ui = "craftbtn";
     Object.assign(this.craftBtn.style, { position: "absolute", top: "170px", left: "8px", font: "bold 12px monospace", padding: "8px 12px", borderRadius: "6px", border: "2px solid #fff", background: "rgba(60,50,20,0.85)", color: "#fff", pointerEvents: "auto", touchAction: "manipulation" });
     this.craftBtn.onclick = (): void => {
       this.craftOpen = !this.craftOpen;
@@ -78,6 +81,8 @@ export class SurvivalUi {
       { position: "absolute", top: "210px", left: "8px", width: "230px", maxHeight: "calc(100% - 330px)", overflowY: "auto", display: "none", flexDirection: "column", gap: "4px", padding: "6px", background: "rgba(0,0,0,0.75)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: "6px", pointerEvents: "auto", touchAction: "pan-y" },
       this.root,
     );
+
+    this.craftPanel.dataset.ui = "craftpanel";
 
     // tela de morte
     this.death = div(

@@ -18,6 +18,7 @@ export class VirtualJoystick {
 
   constructor() {
     this.zone = document.createElement("div");
+    this.zone.dataset.ui = "joy";
     Object.assign(this.zone.style, {
       position: "fixed",
       left: "0",
