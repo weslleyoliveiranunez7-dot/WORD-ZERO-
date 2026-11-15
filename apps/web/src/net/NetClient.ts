@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
   WORLD_ROOM_NAME,
+  type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type JoinOptions,
   type PlayerInputMsg,
@@ -20,6 +21,7 @@ export class NetClient {
   lastError = "";
   onSnapshot: (s: WorldSnapshot) => void = () => {};
   onPlayerState: (s: PlayerStateMsg) => void = () => {};
+  onEntities: (m: EntityUpdateMsg) => void = () => {};
   onInventory: (m: InventoryUpdateMsg) => void = () => {};
   private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
   private client: Client;
@@ -50,6 +52,7 @@ export class NetClient {
     room.onMessage("WORLD_SNAPSHOT", (s: WorldSnapshot) => this.onSnapshot(s));
     room.onMessage("PLAYER_STATE", (s: PlayerStateMsg) => this.onPlayerState(s));
     room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => this.onInventory(m));
+    room.onMessage("ENTITY_UPDATE", (m: EntityUpdateMsg) => this.onEntities(m));
     room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
     room.onLeave((code) => {
       if (this.closed) return;
@@ -86,6 +89,10 @@ export class NetClient {
   // Intencoes: o servidor decide se vale (vivo? item existe? cooldown?) e responde com o estado novo.
   useItem(slot: number): void {
     if (this.status === "online") this.room?.send("REQUEST_USE_ITEM", { slot, actionId: ++this.actionId });
+  }
+
+  interact(): void {
+    if (this.status === "online") this.room?.send("REQUEST_INTERACT", { actionId: ++this.actionId });
   }
 
   respawn(): void {
