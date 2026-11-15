@@ -10,6 +10,7 @@ import {
   inputToVelocity,
   moveWithCollision,
   type Chunk,
+  type EntityUpdateMsg,
   type TileType,
   type Vec2,
   type WorldSnapshot,
@@ -42,6 +43,8 @@ export class GameScene extends Phaser.Scene {
   private remotes = new Map<string, Phaser.GameObjects.Arc>();
   private synced = false;
   private survivalUi?: SurvivalUi;
+  private lootGfx?: Phaser.GameObjects.Graphics; // marcas de recurso esgotado e mochilas (so desenho)
+  private actionBtn?: HTMLButtonElement;
   private speedMul = 1; // vem do servidor (energia baixa = mais lento)
   private dead = false; // vem do servidor
   private deadIds = new Set<string>();
@@ -108,6 +111,17 @@ export class GameScene extends Phaser.Scene {
         this.speedMul = st.speedMul;
         this.survivalUi?.setState(st);
       };
+      this.net.onEntities = (m) => this.drawEntities(m);
+      this.lootGfx = this.add.graphics().setDepth(8);
+      const btn = document.createElement("button");
+      btn.textContent = "COLETAR";
+      Object.assign(btn.style, { position: "fixed", right: "16px", bottom: "120px", width: "84px", height: "84px", borderRadius: "50%", border: "2px solid #fff", background: "#3a7d44", color: "#fff", font: "bold 12px monospace", zIndex: "16", touchAction: "manipulation" });
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        this.net?.interact();
+      });
+      document.body.appendChild(btn);
+      this.actionBtn = btn;
       this.net.onInventory = (m) => this.survivalUi?.setInventory(m);
       this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
     }
@@ -119,6 +133,7 @@ export class GameScene extends Phaser.Scene {
       this.hud.destroy();
       this.minimap.destroy();
       this.survivalUi?.destroy();
+      this.actionBtn?.remove();
       this.net?.close();
       this.remotes.forEach((r) => r.destroy());
       this.remotes.clear();
@@ -202,6 +217,28 @@ export class GameScene extends Phaser.Scene {
         r.destroy();
         this.remotes.delete(id);
       }
+    }
+  }
+
+  // Recurso esgotado = tile escurecido com X; mochila = quadrado marrom. O servidor decide; aqui so desenha.
+  private drawEntities(m: EntityUpdateMsg): void {
+    const g = this.lootGfx;
+    if (!g) return;
+    const ts = this.world.tileSize;
+    g.clear();
+    g.fillStyle(0x000000, 0.55);
+    g.lineStyle(2, 0xaaaaaa, 0.9);
+    for (const k of m.depleted) {
+      const [tx, ty] = k.split(",").map(Number);
+      g.fillRect(tx * ts, ty * ts, ts, ts);
+      g.lineBetween(tx * ts + 6, ty * ts + 6, tx * ts + ts - 6, ty * ts + ts - 6);
+      g.lineBetween(tx * ts + ts - 6, ty * ts + 6, tx * ts + 6, ty * ts + ts - 6);
+    }
+    for (const d of m.drops) {
+      g.fillStyle(0x8b5a2b, 1);
+      g.fillRect(d.x - 9, d.y - 9, 18, 18);
+      g.lineStyle(2, 0xffd36b, 1);
+      g.strokeRect(d.x - 9, d.y - 9, 18, 18);
     }
   }
 
