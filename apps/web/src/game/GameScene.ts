@@ -4,12 +4,14 @@ import {
   CHUNK_SIZE,
   ChunkedWorld,
   INTERPOLATION_DELAY_MS,
+  ITEMS,
   PLAYER_SPEED,
   SnapshotBuffer,
   TILE_ORDER,
   inputToVelocity,
   moveWithCollision,
   type Chunk,
+  type CombatEventMsg,
   type EntityUpdateMsg,
   type TileType,
   type Vec2,
@@ -47,6 +49,8 @@ export class GameScene extends Phaser.Scene {
   private actionBtn?: HTMLButtonElement;
   private attackBtn?: HTMLButtonElement;
   private mobSprites = new Map<number, Phaser.GameObjects.Arc>(); // criaturas (so desenho; posicao vem do servidor)
+  private fxCount = 0; // efeitos de combate ao mesmo tempo (limite: protege o A04)
+  private weaponCooldownMs = 700;
   private speedMul = 1; // vem do servidor (energia baixa = mais lento)
   private dead = false; // vem do servidor
   private deadIds = new Set<string>();
@@ -111,9 +115,11 @@ export class GameScene extends Phaser.Scene {
         if (this.dead && !st.dead) this.synced = false; // reapareceu: assume a posicao do servidor
         this.dead = st.dead;
         this.speedMul = st.speedMul;
+        this.weaponCooldownMs = st.weapon ? (ITEMS[st.weapon]?.weapon?.cooldownMs ?? 700) : 700;
         this.survivalUi?.setState(st);
       };
       this.net.onEntities = (m) => this.drawEntities(m);
+      this.net.onCombat = (ev) => this.onCombat(ev);
       this.lootGfx = this.add.graphics().setDepth(8);
       const btn = document.createElement("button");
       btn.textContent = "COLETAR";
@@ -130,6 +136,8 @@ export class GameScene extends Phaser.Scene {
       atk.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         this.net?.attack();
+        atk.style.opacity = "0.55"; // so cosmetico: o servidor e quem aplica a recarga
+        window.setTimeout(() => (atk.style.opacity = "1"), this.weaponCooldownMs);
       });
       document.body.appendChild(atk);
       this.attackBtn = atk;
@@ -260,6 +268,36 @@ export class GameScene extends Phaser.Scene {
       g.lineStyle(2, 0xffd36b, 1);
       g.strokeRect(d.x - 9, d.y - 9, 18, 18);
     }
+  }
+
+  // Etapa 9: feedback do combate. So DESENHO a partir do que o servidor mandou (COMBAT_EVENT); nada aqui calcula dano ou vida.
+  private onCombat(ev: CombatEventMsg): void {
+    if (this.fxCount > 30) return;
+    const mineHit = ev.victim !== undefined && ev.victim === this.net?.sessionId;
+    const mineAttack = ev.attacker === this.net?.sessionId;
+    const rise = (text: string, color: string, size: number, ms: number): void => {
+      const t = this.add.text(ev.x, ev.y - 14, text, { fontFamily: "monospace", fontSize: `${size}px`, color, stroke: "#000", strokeThickness: 3 }).setOrigin(0.5).setDepth(30);
+      this.fxCount++;
+      this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: ms, onComplete: () => { t.destroy(); this.fxCount--; } });
+    };
+    const ring = (radius: number, color: number, alpha: number, ms: number): void => {
+      const c = this.add.circle(ev.x, ev.y, radius, color, alpha).setDepth(29);
+      this.fxCount++;
+      this.tweens.add({ targets: c, scale: 1.7, alpha: 0, duration: ms, onComplete: () => { c.destroy(); this.fxCount--; } });
+    };
+    if (ev.kind === "miss") {
+      ring(12, 0xffffff, 0.25, 160); // golpe no ar (so mostra de quem foi: no proprio personagem ou no de outro)
+      return;
+    }
+    if (ev.kind === "hit") {
+      ring(10, 0xffffff, 0.8, 180);
+      rise(`-${ev.damage ?? "?"}`, mineHit ? "#ff3b3b" : "#ffd84a", 14, 650);
+      if (mineHit) this.cameras.main.flash(120, 170, 0, 0);
+      if (mineAttack && "vibrate" in navigator) navigator.vibrate(15);
+      return;
+    }
+    ring(16, 0xff3b3b, 0.7, 320);
+    rise("MORTE", "#ff5555", 16, 900);
   }
 
   // Zumbi = vermelho, cervo = marrom claro. Anda suave ate a posicao do servidor; anel mais fino = menos vida.
