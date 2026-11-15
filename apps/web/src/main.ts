@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { BootScene } from "./game/BootScene";
 import { GameScene } from "./game/GameScene";
+import { setupLandscape } from "./ui/landscape";
+
+setupLandscape();
 
 new Phaser.Game({
   type: Phaser.AUTO,
