@@ -1,5 +1,11 @@
 # Changelog
 
+## Dia e noite, tocha e visual (2026-11-15)
+- `shared/daynight.ts`: horario do jogo como funcao do relogio (1 dia = 24 min reais); escuridao maxima as 03:00; transicao suave (smoothstep). 5 testes novos.
+- Item `torch` (Tocha) e receita `torch` (2 madeira, sem bancada).
+- Cliente: camada de escuridao com luz da tocha (RenderTexture), tocha na mao, botao/tecla T, relogio na tela.
+- Sprites novos (personagem, criaturas, arvore/toco, pedra/cascalho, pecas de construcao), modo deitado.
+
 ## Etapa 11 (complemento) - Janela, telhado, reparo e acesso compartilhado
 - Janela: bloqueia a passagem, não a linha de visão (`ChunkedWorld.extraOpaque`). Telhado: camada de cima, só com fundação sua e apoio (parede/porta/janela sua no tile ou ao lado, ou outro telhado seu ao lado); não bloqueia nada e cai antes da fundação. O cliente deixa quase transparente o telhado em que o jogador está.
 - Reparo (só o dono, `REQUEST_BUILD {op:"repair"}`): vida cheia de todas as peças do tile; custa 1 madeira por 25 de vida que faltava (transação).

@@ -320,3 +320,10 @@ Novos: `packages/shared/src/building.ts`, `packages/shared/src/building.test.ts`
 Alterados: `packages/shared/src/{index,chunks,combat,life,protocol,security}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
 Fora do zip: nada (o workflow não muda).
 Apagados: nenhum.
+
+
+## Dia e noite + tocha (2026-11-15)
+- Horario = funcao do relogio (`gameMinutesAt`), igual em todos os aparelhos sem rede. Escuridao maxima 03:00 (alpha ~0.985). Quando existir o relogio do backend (Etapa 14), trocar o "agora" por ele.
+- Tocha: item e receita no `shared` (o servidor valida como qualquer receita). A LUZ e so desenho no cliente: outros jogadores NAO veem a tocha de quem esta perto (limitacao conhecida; exigiria campo novo no snapshot + PROTOCOL_VERSION).
+- Tocha nao gasta (sem durabilidade/combustivel ainda). Criaturas nao reagem a luz.
+- Verificado: 5 testes novos + crafting/building/loot/combat/security/persist/network passando (shim Node); `tsc` do `shared` limpo. NAO verificado: cliente no navegador/celular (desempenho da camada escura no A04, aparencia).
