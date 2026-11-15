@@ -1,7 +1,7 @@
 // Etapa 6: definicoes de itens (Documento Mestre 4.4). Fonte unica de verdade: o servidor decide o que
 // cada item faz; o cliente so mostra nome/icone. Nunca confiar em nome, quantidade ou efeito vindos da rede.
 
-export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar", "wood", "stone", "scrap", "raw_meat", "club", "workbench", "axe", "pickaxe", "spear"] as const;
+export const ITEM_IDS = ["canned_food", "water_bottle", "bandage", "energy_bar", "wood", "stone", "scrap", "raw_meat", "club", "workbench", "axe", "pickaxe", "spear", "torch"] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
 export type ItemCategory = "food" | "drink" | "medical" | "resource" | "weapon" | "tool";
@@ -47,6 +47,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   workbench: { id: "workbench", name: "Bancada simples", category: "tool", weight: 8, maxStack: 1, effects: {} }, // estacao: precisa estar no inventario (nao e gasta)
   axe: { id: "axe", name: "Machado improvisado", category: "tool", weight: 2, maxStack: 1, effects: {} }, // arvore rende 2 madeiras por coleta
   pickaxe: { id: "pickaxe", name: "Picareta simples", category: "tool", weight: 2.5, maxStack: 1, effects: {} }, // pedra/sucata rendem 2 por coleta
+  torch: { id: "torch", name: "Tocha", category: "tool", weight: 0.5, maxStack: 3, effects: {} }, // ilumina a noite (a luz e so desenho no cliente)
   spear: { id: "spear", name: "Lanca", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 28, reach: 72, cooldownMs: 900 } },
 };
 

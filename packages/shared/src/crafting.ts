@@ -5,7 +5,7 @@ import { isItemId, type ItemId } from "./items";
 // A fabricacao e uma TRANSACAO: ou consome tudo e entrega o resultado, ou nao altera nada.
 // Valores provisorios (balancear depois de jogar).
 
-export const RECIPE_IDS = ["club", "bandage", "workbench", "axe", "pickaxe", "spear"] as const;
+export const RECIPE_IDS = ["club", "bandage", "workbench", "axe", "pickaxe", "spear", "torch"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export interface Recipe {
@@ -22,6 +22,7 @@ export const RECIPES: Record<RecipeId, Recipe> = {
   workbench: { id: "workbench", inputs: [{ id: "wood", qty: 6 }, { id: "scrap", qty: 2 }], output: { id: "workbench", qty: 1 }, craftMs: 3000 },
   axe: { id: "axe", inputs: [{ id: "wood", qty: 3 }, { id: "stone", qty: 2 }], output: { id: "axe", qty: 1 }, station: "workbench", craftMs: 2000 },
   pickaxe: { id: "pickaxe", inputs: [{ id: "wood", qty: 3 }, { id: "stone", qty: 3 }], output: { id: "pickaxe", qty: 1 }, station: "workbench", craftMs: 2000 },
+  torch: { id: "torch", inputs: [{ id: "wood", qty: 2 }], output: { id: "torch", qty: 1 }, craftMs: 1200 },
   spear: { id: "spear", inputs: [{ id: "wood", qty: 2 }, { id: "stone", qty: 1 }], output: { id: "spear", qty: 1 }, station: "workbench", craftMs: 2000 },
 };
 
