@@ -18,6 +18,10 @@ import {
   parseSave,
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
+  StructureWorld,
+  STRUCT_DAMAGE_MULT,
+  TRUST_REACH,
+  inspectBuild,
   inspectAttack,
   inspectCraft,
   inspectInput,
@@ -27,6 +31,10 @@ import {
   parseJoinOptions,
   type ActionRejectedMsg,
   type ActionResult,
+  type BuildResult,
+  type ChestUpdateMsg,
+  type ServerNoticeMsg,
+  type StructureUpdateMsg,
   type CombatEventMsg,
   type Fighter,
   type EntityUpdateMsg,
@@ -43,6 +51,9 @@ const INVENTORY_HEARTBEAT_MS = 2000;
 const LOOT_HEARTBEAT_MS = 2000;
 const AUTOSAVE_MS = 30_000;
 const DUPLICATE_SESSION_CODE = 4002;
+const STRUCTURES_ID = "world-structures"; // registro unico das estruturas no mesmo armazenamento dos personagens (ids de jogador sao sha256 hex: sem colisao)
+const STRUCTURES_SAVE_MS = 5000; // no maximo 1 gravacao a cada 5 s (so se algo mudou)
+const STRUCTURES_RETRY_MS = 10_000;
 
 interface PlayerEntry {
   sim: PlayerSim;
@@ -57,6 +68,7 @@ interface PlayerEntry {
   lastInvSent: number;
   lastLootVersion: number;
   lastLootSent: number;
+  lastStructVersion: number; // versao das estruturas que este cliente ja recebeu (-1 = enviar tudo)
   keyId?: string; // hash da chave do jogador (sem chave = nada e salvo)
   lastSave: number;
   saving: boolean;
@@ -75,9 +87,20 @@ export class WorldRoom extends Room {
   private joined = 0;
   private store?: PlayerStore;
   private activeKeys = new Map<string, string>(); // keyId -> sessionId (um personagem so entra uma vez por vez)
+  // Etapa 11: construcoes. So o servidor cria/abre/danifica; `structuresReady` so vira true depois de LER o armazenamento
+  // (construir antes disso e gravar por cima apagaria as bases de todo mundo).
+  private structures!: StructureWorld;
+  private structuresReady = false;
+  private structuresSaving = false;
+  private structuresLastSave = 0;
+  private structuresLastTry = 0;
 
   onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore }): void {
     this.store = options.store;
+    this.structures = new StructureWorld(this.world.width, this.world.height, this.world.tileSize);
+    this.world.extraSolid = this.structures.solidAt; // colisao de jogadores e criaturas
+    this.world.extraOpaque = this.structures.opaqueAt; // linha de visao (janela deixa ver)
+    void this.loadStructures();
     this.mobs.populate(this.world);
     this.maxClients = options.maxPlayers ?? this.maxClients;
     this.survivalScale = options.survivalScale ?? 1;
@@ -116,7 +139,19 @@ export class WorldRoom extends Room {
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
       const now = Date.now();
       const out = performAttack(this.world, this.mobs, this.fighter(client.sessionId, p), this.fighters(), r.msg.actionId, now);
-      for (const ev of out.events) this.emitCombat(ev);
+      // Etapa 11: golpe que nao achou jogador nem criatura pode acertar uma estrutura (o golpe ja gastou a recarga normalmente).
+      let events = out.events;
+      if (out.res.ok && this.structuresReady && events.length === 1 && events[0].kind === "miss") {
+        const w = bestWeapon(p.life.inventory);
+        const t = this.structures.nearest(p.sim.x, p.sim.y, w.reach);
+        const dmg = Math.max(1, Math.round(w.damage * STRUCT_DAMAGE_MULT));
+        const d = t ? this.structures.damage(t.tx, t.ty, dmg) : null;
+        if (d && d.hit) {
+          events = [{ kind: "hit", attacker: client.sessionId, x: d.x, y: d.y, damage: dmg }];
+          if (d.drops.length > 0) this.loot.addDrop(d.x, d.y, d.drops, now); // conteudo do bau destruido vira mochila no chao
+        }
+      }
+      for (const ev of events) this.emitCombat(ev);
       if (out.drop) this.loot.addDrop(out.drop.x, out.drop.y, out.drop.items, now); // loot da criatura no chao
       this.finish(client, p, "REQUEST_ATTACK", out.res);
     });
@@ -129,6 +164,35 @@ export class WorldRoom extends Room {
       const r = inspectCraft(raw);
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
       this.finish(client, p, "REQUEST_CRAFT", p.life.craft(r.msg.recipe, r.msg.actionId, Date.now()));
+    });
+
+    // Etapa 11: construir, abrir/fechar porta, ver/usar bau, reparar e dar acesso (janela e telhado sao pecas como as outras). A mensagem so tem a operacao e o tile alvo; dono, alcance,
+    // recursos, espaco e colisao saem do servidor (StructureWorld). Sem personagem salvo (sem chave) nao ha como ser dono.
+    this.onMessage("REQUEST_BUILD", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectBuild(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      const m = r.msg;
+      const begin = p.life.beginBuild(m.actionId, Date.now());
+      if (!begin.ok) return this.finish(client, p, "REQUEST_BUILD", begin);
+      if (!p.keyId) return this.finish(client, p, "REQUEST_BUILD", { ok: false, reason: "sem_personagem_salvo", weight: 0 });
+      if (!this.structuresReady) return this.finish(client, p, "REQUEST_BUILD", { ok: false, reason: "mundo_carregando", weight: 0 });
+      let res: BuildResult;
+      if (m.op === "trust") res = this.trustNearest(client, p);
+      else {
+        const base = { owner: p.keyId, tx: m.tx, ty: m.ty, px: p.sim.x, py: p.sim.y };
+        const occupants = [...this.players.values()].map((q) => ({ x: q.sim.x, y: q.sim.y }));
+        if (m.op === "place") res = this.structures.place({ ...base, kind: m.piece, inv: p.life.inventory, terrain: this.world, occupants });
+        else if (m.op === "toggle") res = this.structures.toggle({ ...base, occupants });
+        else if (m.op === "repair") res = this.structures.repair({ ...base, inv: p.life.inventory });
+        else res = this.structures.move({ ...base, inv: p.life.inventory, slot: m.slot, toChest: m.op === "deposit" });
+      }
+      if (res.ok) {
+        if (m.op !== "toggle" && m.op !== "trust") p.life.invVersion++; // recursos gastos / itens movidos
+        if (res.chest) this.sendChest(client, p, m.tx, m.ty);
+      }
+      this.finish(client, p, "REQUEST_BUILD", res);
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
@@ -219,6 +283,7 @@ export class WorldRoom extends Room {
       lastInvSent: 0,
       lastLootVersion: -1,
       lastLootSent: 0,
+      lastStructVersion: -1,
       keyId,
       lastSave: Date.now(),
       saving: false,
@@ -239,6 +304,7 @@ export class WorldRoom extends Room {
           p.lastStateSent = 0; // reenvia o estado completo ao reconectar
           p.lastInvSent = 0;
           p.lastLootSent = 0;
+          p.lastStructVersion = -1;
         }
         console.log(`[WorldRoom] reconectou: ${client.sessionId}`);
         return;
@@ -264,6 +330,76 @@ export class WorldRoom extends Room {
     }
   }
 
+  // Le as estruturas salvas. Falha ou dado invalido: NAO libera construcao nem grava (tenta de novo a cada 10 s).
+  private async loadStructures(): Promise<void> {
+    this.structuresLastTry = Date.now();
+    if (!this.store) {
+      this.structuresReady = true; // sem armazenamento (testes): vale so enquanto a sala existir
+      return;
+    }
+    try {
+      const raw = await this.store.load(STRUCTURES_ID);
+      if (raw === null) {
+        this.structuresReady = true; // mundo novo, nada construido ainda
+        return;
+      }
+      const w = StructureWorld.fromSave(raw, this.world.width, this.world.height, this.world.seed, this.world.tileSize);
+      if (!w) {
+        console.error("[WorldRoom] estruturas salvas invalidas (ou de outra seed): construcao DESLIGADA, nada sera sobrescrito");
+        return;
+      }
+      this.structures = w;
+      this.world.extraSolid = w.solidAt;
+      this.world.extraOpaque = w.opaqueAt;
+      this.structuresReady = true;
+      console.log(`[WorldRoom] ${w.count} tiles com estrutura restaurados`);
+    } catch (e) {
+      console.error("[WorldRoom] falha ao carregar estruturas (construcao desligada, tentando de novo)", e);
+    }
+  }
+
+  private async persistStructures(): Promise<void> {
+    if (!this.store || !this.structuresReady || this.structuresSaving) return;
+    this.structuresSaving = true;
+    this.structuresLastSave = Date.now();
+    this.structures.dirty = false; // mudancas durante a gravacao marcam de novo
+    try {
+      await this.store.save(STRUCTURES_ID, this.structures.toSave(this.world.seed));
+    } catch (e) {
+      this.structures.dirty = true;
+      console.error("[WorldRoom] falha ao salvar estruturas", e);
+    } finally {
+      this.structuresSaving = false;
+    }
+  }
+
+  // Da (ou tira) o acesso as portas/baus ao jogador MAIS PROXIMO do dono. Quem recebe e escolhido pelo servidor, pela posicao
+  // que ele conhece; o cliente nunca manda id de ninguem. So jogadores conectados e com personagem salvo podem ser liberados.
+  private trustNearest(client: Client, p: PlayerEntry): BuildResult {
+    let best: { key: string; d: number } | null = null;
+    for (const [id, q] of this.players) {
+      if (id === client.sessionId || !q.connected || !q.keyId || q.keyId === p.keyId || q.life.dead) continue;
+      const d = Math.hypot(q.sim.x - p.sim.x, q.sim.y - p.sim.y);
+      if (d <= TRUST_REACH && (!best || d < best.d)) best = { key: q.keyId, d };
+    }
+    if (!best) return { ok: false, reason: "ninguem_perto", weight: 0 };
+    const r = this.structures.toggleTrust(p.keyId!, best.key);
+    if (r.ok) {
+      const msg: ServerNoticeMsg = { text: r.added ? "Acesso as suas portas e baus concedido ao jogador mais proximo." : "Acesso removido do jogador mais proximo." };
+      client.send("SERVER_NOTICE", msg);
+    }
+    return r;
+  }
+
+  // Conteudo do bau SO para o dono, perto do bau (a regra esta em StructureWorld.chestSlots).
+  private sendChest(client: Client, p: PlayerEntry, tx: number, ty: number): void {
+    if (!p.keyId) return;
+    const slots = this.structures.chestSlots(p.keyId, tx, ty, p.sim.x, p.sim.y);
+    if (!slots) return;
+    const msg: ChestUpdateMsg = { tx, ty, slots };
+    client.send("CHEST_UPDATE", msg);
+  }
+
   private release(sessionId: string): void {
     const p = this.players.get(sessionId);
     if (!p) return;
@@ -274,6 +410,10 @@ export class WorldRoom extends Room {
 
   async onDispose(): Promise<void> {
     for (const p of this.players.values()) await this.persist(p);
+    if (this.structures.dirty) {
+      this.structuresSaving = false;
+      await this.persistStructures();
+    }
   }
 
   // Posicoes iniciais levemente diferentes dentro da area livre do spawn.
@@ -345,6 +485,11 @@ export class WorldRoom extends Room {
       const inv: InventoryUpdateMsg = { slots: p.life.inventory.snapshot() };
       client.send("INVENTORY_UPDATE", inv);
     }
+    if (p.lastStructVersion !== this.structures.version) {
+      p.lastStructVersion = this.structures.version;
+      const upd: StructureUpdateMsg = { rows: this.structures.view(p.keyId ?? "") };
+      client.send("STRUCTURE_UPDATE", upd);
+    }
     if (force || this.loot.version !== p.lastLootVersion || now - p.lastLootSent >= LOOT_HEARTBEAT_MS) {
       p.lastLootVersion = this.loot.version;
       p.lastLootSent = now;
@@ -357,6 +502,8 @@ export class WorldRoom extends Room {
     const dt = dtMs / 1000;
     const now = Date.now();
     this.loot.tick(now);
+    if (!this.structuresReady && now - this.structuresLastTry >= STRUCTURES_RETRY_MS) void this.loadStructures();
+    if (this.structures.dirty && now - this.structuresLastSave >= STRUCTURES_SAVE_MS) void this.persistStructures();
     // criaturas so enxergam jogadores vivos e conectados
     const targets = [];
     for (const [pid, q] of this.players) if (q.connected && !q.life.dead) targets.push({ id: pid, x: q.sim.x, y: q.sim.y });
