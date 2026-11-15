@@ -36,3 +36,19 @@
 - Fonte de assets com licença.
 
 - Etapa 7 (provisório): mochila de morte dura 5 min (DROP_TTL_MS); recurso volta em 60 s; persistência de inventário depende de definir identidade do jogador (conta/token).
+
+
+## Tomadas na Etapa 9 (valores provisórios, balancear depois de jogar)
+- **Um único caminho de dano de jogador**: `performAttack` (`packages/shared/src/combat.ts`). A mensagem é só `{actionId}`; alvo, arma, alcance, dano e recarga saem do servidor. Qualquer campo extra (`victim`, `damage`, `weapon`, `reach`, `x`, `y`) é manipulação (peso 5, conta para expulsão).
+- **Arma automática**: vale a de maior dano no inventário do servidor; sem arma, punho. Não existe "equipar" vindo do cliente (evita mais uma mensagem para validar). Troca de arma/slot de mão entra com a interface da Etapa 10/15.
+- **Valores**: punho 10 de dano / 48 px / 700 ms; porrete 20 / 52 px / 800 ms. Vida 100: ~10 socos ou 5 porretadas. Porrete só vem de zumbi (8%) até o crafting (Etapa 10).
+- **Alvo**: o mais próximo (jogador ou criatura) dentro do alcance e com linha de visão; empate vai para a criatura. Não há mira/direção: o jogo não tem direção de rosto ainda, então "direção" do Documento Mestre 6.3 fica pendente.
+- **Linha de visão**: parede e árvore bloqueiam; água não. Vale também para golpes contra criaturas.
+- **Errar gasta a recarga** (mudança em relação à Etapa 8, em que atacar sem alvo não gastava nada).
+- **Desconectado continua alvo**: o personagem fica 15 s no mundo (janela de reconexão) e pode morrer; é o que o Documento Mestre 7.6 recomenda contra fugir da luta pela desconexão. Durante a janela o tempo de sobrevivência continua congelado.
+- **Proteção de reaparecimento: 3 s, só contra jogadores** (`SPAWN_GRACE_MS`, 0 desliga). Não é invulnerabilidade permanente (Documento Mestre 5.5): acaba sozinha e acaba na hora se o protegido atacar. Zumbis não respeitam a proteção. DECISÃO PARA O USUÁRIO CONFIRMAR: manter, aumentar ou zerar.
+- **Crédito da morte**: quem causou o último dano em até 15 s (`KILL_CREDIT_MS`) aparece no evento `kill`. Não há placar nem estatística salva ainda.
+- **Dois golpes no mesmo instante**: vida zerada já conta como morto na hora (não leva dano nem gera crédito/mochila de novo).
+- **Sem fogo amigo especial, sem zona segura**: PvP sempre ativo (Documento Mestre 1 e 5.5).
+- **Compensação de lag: nenhuma.** O servidor usa as posições que ele conhece; o cliente desenha os outros ~100 ms no passado. Nas bordas do alcance um golpe pode errar "por pouco". Medir antes de compensar.
+- **`COMBAT_EVENT` é só feedback**: o cliente nunca confirma dano por ele; vida, morte e loot chegam por `PLAYER_STATE`, snapshot e `ENTITY_UPDATE`.
