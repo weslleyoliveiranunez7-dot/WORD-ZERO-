@@ -59,3 +59,13 @@
 - **Ferramentas não são armas.** Machado e picareta só afetam a coleta (2 unidades por golpe); a única arma nova é a lança.
 - **Sem tocha por enquanto**: não existe ciclo de dia/noite. Entra com ele.
 - Receitas e quantidades: ver `RECIPES` em `packages/shared/src/crafting.ts` (fonte única de verdade, usada pelo servidor e pela interface).
+
+## Etapa 11 - Construção
+- **Estruturas em registro único.** Um só registro (`world-structures`) no mesmo `PlayerStore` dos personagens, regravado no máximo a cada 5 s. Simples e suficiente para o MVP; com muitas bases passa para uma linha por chunk/peça (Etapa 12, banco).
+- **Sem leitura = sem construção.** Se não for possível ler o registro (erro, dado inválido, seed diferente), a construção fica desligada e nada é gravado por cima. Trocar de seed/wipe = apagar o registro de propósito.
+- **Dono = hash da chave do jogador.** Sem chave salva não se constrói. O cliente nunca recebe o dono, só a marca "meu".
+- **Invasão por dano, não por acesso.** Porta e baú só o dono usa; os outros destroem (dano da arma x 0,5). Valores provisórios: confirmar depois de jogar.
+- **Uma peça em cima da fundação.** Simplifica colisão, dano e salvamento (grade de tiles). Janela e telhado ficam para depois.
+- **Telhado é camada, não peça de topo.** Pode coexistir com parede/porta/janela no mesmo tile; exige apoio. Sem regra de interior ainda (só visual: some quando o jogador está debaixo).
+- **Acesso por dono, não por peça.** O dono libera o jogador mais próximo para TODAS as suas portas e baús (máx. 8). O servidor escolhe quem, pela posição que conhece, para o cliente nunca mandar identificador de ninguém.
+- **Reparo = madeira pela vida que faltava** (1 por 25). Valor provisório.
