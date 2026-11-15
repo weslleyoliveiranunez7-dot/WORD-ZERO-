@@ -1,0 +1,15 @@
+# Hospedagem do SERVIDOR multiplayer no Render (o GitHub Pages hospeda so o cliente).
+# NAO verificado: este arquivo nao foi testado no Render. Se o build falhar, cole o log no chat.
+services:
+  - type: web
+    name: worldzero-server
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false
+    startCommand: pnpm --filter @worldzero/server start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: CORS_ORIGIN
+        value: "*"
