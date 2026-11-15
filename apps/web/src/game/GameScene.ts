@@ -143,7 +143,8 @@ export class GameScene extends Phaser.Scene {
     const cx = Math.max(-1, Math.min(1, ix));
     const cy = Math.max(-1, Math.min(1, iy));
     this.inputTimer += delta;
-    if (cx !== this.lastIx || cy !== this.lastIy || this.inputTimer >= 50) {
+    // no maximo ~30 mensagens/s (o servidor limita a frequencia e expulsa quem exagera)
+    if (((cx !== this.lastIx || cy !== this.lastIy) && this.inputTimer >= 33) || this.inputTimer >= 50) {
       this.lastIx = cx;
       this.lastIy = cy;
       this.inputTimer = 0;
