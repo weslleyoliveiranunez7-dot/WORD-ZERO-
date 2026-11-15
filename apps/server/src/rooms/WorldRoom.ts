@@ -27,6 +27,7 @@ import {
   inspectInput,
   inspectInteract,
   inspectRespawn,
+  inspectTorch,
   inspectUseItem,
   parseJoinOptions,
   type ActionRejectedMsg,
@@ -68,6 +69,7 @@ interface PlayerEntry {
   lastInvSent: number;
   lastLootVersion: number;
   lastLootSent: number;
+  torchOn: boolean; // preferencia do jogador (REQUEST_TORCH); so vira luz se ele tiver uma tocha no inventario
   lastStructVersion: number; // versao das estruturas que este cliente ja recebeu (-1 = enviar tudo)
   keyId?: string; // hash da chave do jogador (sem chave = nada e salvo)
   lastSave: number;
@@ -184,15 +186,24 @@ export class WorldRoom extends Room {
         const base = { owner: p.keyId, tx: m.tx, ty: m.ty, px: p.sim.x, py: p.sim.y };
         const occupants = [...this.players.values()].map((q) => ({ x: q.sim.x, y: q.sim.y }));
         if (m.op === "place") res = this.structures.place({ ...base, kind: m.piece, inv: p.life.inventory, terrain: this.world, occupants });
-        else if (m.op === "deposit" || m.op === "withdraw") res = this.structures.move({ ...base, inv: p.life.inventory, slot: m.slot, toChest: m.op === "deposit" });
         else if (m.op === "toggle") res = this.structures.toggle({ ...base, occupants });
-        else res = this.structures.repair({ ...base, inv: p.life.inventory });
+        else if (m.op === "repair") res = this.structures.repair({ ...base, inv: p.life.inventory });
+        else res = this.structures.move({ ...base, inv: p.life.inventory, slot: m.slot, toChest: m.op === "deposit" });
       }
       if (res.ok) {
         if (m.op !== "toggle" && m.op !== "trust") p.life.invVersion++; // recursos gastos / itens movidos
-        if (res.chest && m.op !== "trust") this.sendChest(client, p, m.tx, m.ty);
+        if (res.chest) this.sendChest(client, p, m.tx, m.ty);
       }
       this.finish(client, p, "REQUEST_BUILD", res);
+    });
+
+    // Tocha: o cliente so diz "quero acesa/apagada". Quem aparece com luz para os outros e decidido aqui no snapshot.
+    this.onMessage("REQUEST_TORCH", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectTorch(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      p.torchOn = r.msg.on;
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
@@ -283,6 +294,7 @@ export class WorldRoom extends Room {
       lastInvSent: 0,
       lastLootVersion: -1,
       lastLootSent: 0,
+      torchOn: true,
       lastStructVersion: -1,
       keyId,
       lastSave: Date.now(),
@@ -528,7 +540,7 @@ export class WorldRoom extends Room {
         }
       }
       if (p.connected && now - p.lastSave >= AUTOSAVE_MS) void this.persist(p);
-      snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead });
+      snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead, ...(p.torchOn && !p.life.dead && p.life.inventory.count("torch") > 0 ? { torch: true } : {}) });
     }
     const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps, mobs: this.mobs.snaps() };
     this.broadcast("WORLD_SNAPSHOT", snapshot);
