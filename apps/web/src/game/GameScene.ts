@@ -193,9 +193,14 @@ export class GameScene extends Phaser.Scene {
     if (!me) return;
     // 1o snapshot: assume a posicao do servidor. Depois: so corrige se divergir muito
     // (reconciliacao de verdade por seq fica para a Etapa 5).
-    if (!this.synced || Math.hypot(me.x - this.pos.x, me.y - this.pos.y) > 64) {
+    // Tolera atraso de rede: ate 96 px de diferenca nao corrige (o servidor so "enxerga" onde voce ja esteve).
+    // Entre 96 e 200 px puxa aos poucos (sem pulo); acima disso (parede, reaparecer) assume o servidor.
+    const d = Math.hypot(me.x - this.pos.x, me.y - this.pos.y);
+    if (!this.synced || d > 200) {
       this.pos = { x: me.x, y: me.y };
       this.synced = true;
+    } else if (d > 96) {
+      this.pos = { x: this.pos.x + (me.x - this.pos.x) * 0.25, y: this.pos.y + (me.y - this.pos.y) * 0.25 };
     }
   }
 
