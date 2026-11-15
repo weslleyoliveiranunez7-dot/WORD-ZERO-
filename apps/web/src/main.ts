@@ -3,9 +3,16 @@ import { BootScene } from "./game/BootScene";
 import { GameScene } from "./game/GameScene";
 import { setupLandscape } from "./ui/landscape";
 
-setupLandscape();
+let game: Phaser.Game | undefined;
 
-new Phaser.Game({
+// A area de jogo (#stage) e medida em pixels; sempre que ela muda, o Phaser e avisado.
+setupLandscape((w, h) => {
+  if (!game) return;
+  game.scale.resize(w, h);
+  game.scale.refresh();
+});
+
+game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   backgroundColor: "#0b0f0c",
