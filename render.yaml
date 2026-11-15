@@ -13,3 +13,8 @@ services:
         value: "22"
       - key: CORS_ORIGIN
         value: "*"
+      # Persistencia (ver HOSPEDAR_SERVIDOR.md). Preencha no painel do Render; NUNCA coloque a chave aqui.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false

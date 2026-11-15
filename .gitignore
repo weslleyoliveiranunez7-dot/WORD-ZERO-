@@ -10,3 +10,5 @@ dist/
 keystore.properties
 apps/web/android/app/build/
 apps/web/android/.gradle/
+# dados de jogadores salvos em arquivo (servidor local)
+data/

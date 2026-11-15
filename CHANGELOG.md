@@ -2,7 +2,7 @@
 
 ## Etapa 7 - Coleta e loot
 - Madeira, pedra e sucata coletáveis; mochila de morte; `REQUEST_INTERACT`; `ENTITY_UPDATE`; protocolo 3; botão COLETAR.
-- Sem persistência de inventário (pendente).
+- Persistência de personagem: chave no aparelho, salvamento em Supabase ou arquivos, bloqueio de sessão duplicada.
 
 ## [Não lançado]
 ### Etapa 6 - Personagem e sobrevivência (2026-11-14)

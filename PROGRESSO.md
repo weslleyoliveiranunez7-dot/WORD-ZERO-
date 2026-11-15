@@ -216,3 +216,12 @@ Ver `docs/DECISOES_TECNICAS.md`.
 - NÃO verificado: servidor/cliente/bots rodando de verdade (sem `pnpm install` aqui); `survivor.ts`/`attacker.ts` não ganharam casos da Etapa 7; aparência do botão no celular.
 - NÃO feito: **inventário persistente** (exige identidade do jogador: conta/token; decisão em aberto) e "loot de edifícios" além de pedra/sucata nas ruínas. Baús ficam para depois.
 - Critério de aceite: workflow passar + 2 aparelhos coletando a mesma árvore sem passar de 3 madeiras no total.
+
+## Etapa 7 - Persistência de inventário (escrita, 2026-11-14)
+- Identidade: chave secreta aleatória gerada no aparelho (localStorage `wz_key`), enviada no join (`JoinOptions.key`, opcional). O servidor guarda só o SHA-256 dela.
+- Salva (`packages/shared/src/persist.ts`): inventário, 4 medidores, posição. Autosave 30 s, ao sair/expulsar, ao morrer, no desligamento (`onDispose`). Morto é salvo como "recomeçar" (kit inicial, spawn).
+- Armazenamento (`apps/server/src/store.ts`): Supabase se `SUPABASE_URL`+`SUPABASE_KEY`; senão arquivos em `DATA_DIR` (padrão `data/`, no `.gitignore`). No Render gratuito o disco é apagado: só o Supabase persiste de verdade. Passo a passo em `HOSPEDAR_SERVIDOR.md`.
+- Segurança: dado carregado é revalidado (`parseSave`); falha ao LER recusa a entrada (não sobrescreve personagem com um vazio); mesmo personagem não entra 2x (códigos 4002/4004); sem chave = joga sem salvar.
+- Verificado: 4 testes novos em `persist.test.ts` (ida e volta, morto, dados adulterados, validação da chave).
+- NÃO verificado: `FileStore`/`SupabaseStore` rodando de verdade, a tabela do Supabase, reinício do servidor com personagem restaurado, `onDispose` no SIGTERM do Render, localStorage no celular.
+- Fora do salvamento: mochilas de morte e recursos esgotados (voltam ao normal no reinício).
