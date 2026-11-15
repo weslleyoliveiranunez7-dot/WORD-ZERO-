@@ -154,6 +154,29 @@ async function main(): Promise<void> {
   await sleep(1100);
   check("fabricar sem ingredientes recusado e nada aparece no inventario", reasons.includes("faltam_ingredientes") && !inv?.slots.some((x) => x && x.id === "club"), `motivos: ${[...new Set(reasons)].join(",")}`);
 
+  // Etapa 11: construir com campos forjados / peca ou operacao inventada / coordenadas absurdas e recusado; sem recursos ou
+  // fora do alcance nada e gasto (a conta do inventario nao muda)
+  await sleep(3000);
+  reasons.length = 0;
+  room.send("REQUEST_BUILD", { op: "place", piece: "wall", tx: 3, ty: 3, actionId: ++aid, owner: "outro", cost: 0 });
+  room.send("REQUEST_BUILD", { op: "place", piece: "ouro", tx: 3, ty: 3, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "place", piece: "__proto__", tx: 3, ty: 3, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "place", piece: "wall", tx: 1e9, ty: -5, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "demolir", tx: 3, ty: 3, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "withdraw", tx: 3, ty: 3, slot: 1e9, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "trust", who: "outro", actionId: ++aid }); // quem recebe acesso e escolhido pelo servidor
+  room.send("REQUEST_BUILD", { op: "repair", tx: 3, ty: 3, qty: 99, actionId: ++aid });
+  room.send("REQUEST_BUILD", { op: "place", piece: "telhadox", tx: 3, ty: 3, actionId: ++aid });
+  await sleep(1100);
+  check("construir com campos extras / peca inventada / coordenadas absurdas recusado", reasons.includes("campos_extras") || reasons.includes("valores_invalidos"), `motivos: ${[...new Set(reasons)].join(",")}`);
+  await sleep(3000);
+  reasons.length = 0;
+  const buildBefore = total();
+  room.send("REQUEST_BUILD", { op: "place", piece: "foundation", tx: 3, ty: 3, actionId: ++aid }); // longe do spawn e sem recursos
+  room.send("REQUEST_BUILD", { op: "toggle", tx: 3, ty: 3, actionId: ++aid }); // nada ali
+  await sleep(1100);
+  check("construir longe / sem recursos recusado e nada e gasto", ["longe_demais", "faltam_recursos", "sem_personagem_salvo", "mundo_carregando", "nada_aqui"].some((r) => reasons.includes(r)) && total() === buildBefore, `motivos: ${[...new Set(reasons)].join(",")}`);
+
   // rajada de 15 usos do slot 0: so 1 pode ser consumido (cooldown no servidor)
   const slot0 = inv!.slots[0];
   const before0 = slot0 ? slot0.qty : 0;
