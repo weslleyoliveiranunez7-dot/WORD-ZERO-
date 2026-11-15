@@ -19,6 +19,7 @@ import {
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
   inspectAttack,
+  inspectCraft,
   inspectInput,
   inspectInteract,
   inspectRespawn,
@@ -62,7 +63,7 @@ interface PlayerEntry {
 }
 
 // Etapa 6: alem do movimento, o servidor mantem vida/fome/sede/energia/inventario de cada jogador.
-// O cliente so manda intencoes (PLAYER_INPUT, REQUEST_USE_ITEM, REQUEST_RESPAWN) e recebe o estado pronto.
+// O cliente so manda intencoes (PLAYER_INPUT, REQUEST_USE_ITEM, REQUEST_CRAFT, REQUEST_RESPAWN) e recebe o estado pronto.
 // Toda mensagem passa por: limite de frequencia -> validacao estrita -> regra de jogo no servidor.
 export class WorldRoom extends Room {
   private world = new ChunkedWorld(); // mundo de teste 8x8: no maximo 64 chunks em memoria
@@ -118,6 +119,16 @@ export class WorldRoom extends Room {
       for (const ev of out.events) this.emitCombat(ev);
       if (out.drop) this.loot.addDrop(out.drop.x, out.drop.y, out.drop.items, now); // loot da criatura no chao
       this.finish(client, p, "REQUEST_ATTACK", out.res);
+    });
+
+    // Etapa 10: fabricar. A mensagem so tem { recipe, actionId }. Ingredientes, bancada, espaco e tempo saem do inventario
+    // que o SERVIDOR guarda; a troca (ingredientes -> resultado) e uma transacao unica em PlayerLife.craft.
+    this.onMessage("REQUEST_CRAFT", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectCraft(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      this.finish(client, p, "REQUEST_CRAFT", p.life.craft(r.msg.recipe, r.msg.actionId, Date.now()));
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
