@@ -46,6 +46,7 @@ import {
   type WorldSnapshot,
 } from "@worldzero/shared";
 import { keyToId, type PlayerStore } from "../store";
+import { recoverFromSnapshots, type Recovered } from "../recovery";
 
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
 const INVENTORY_HEARTBEAT_MS = 2000;
@@ -55,6 +56,8 @@ const DUPLICATE_SESSION_CODE = 4002;
 const STRUCTURES_ID = "world-structures"; // registro unico das estruturas no mesmo armazenamento dos personagens (ids de jogador sao sha256 hex: sem colisao)
 const STRUCTURES_SAVE_MS = 5000; // no maximo 1 gravacao a cada 5 s (so se algo mudou)
 const STRUCTURES_RETRY_MS = 10_000;
+const CRITICAL_SAVE_MS = 2000; // inventario mudou (coleta, fabricacao, construcao, item usado...): grava em ate ~2 s, sem esperar o autosave de 30 s
+const SNAPSHOT_MS = 10 * 60_000; // copia de historico (para recuperar) no maximo a cada 10 min por registro, alem dos eventos importantes
 
 interface PlayerEntry {
   sim: PlayerSim;
@@ -74,6 +77,9 @@ interface PlayerEntry {
   keyId?: string; // hash da chave do jogador (sem chave = nada e salvo)
   lastSave: number;
   saving: boolean;
+  savedInv: number; // invVersion que ja foi gravada (diferente = ha mudanca de inventario por gravar)
+  lastSnap: number; // ultimo snapshot de historico deste personagem
+  pendingReason?: string; // pedido importante (morte/saida/desligamento) que chegou com outra gravacao em andamento: roda logo depois
 }
 
 // Etapa 6: alem do movimento, o servidor mantem vida/fome/sede/energia/inventario de cada jogador.
@@ -96,6 +102,7 @@ export class WorldRoom extends Room {
   private structuresSaving = false;
   private structuresLastSave = 0;
   private structuresLastTry = 0;
+  private structuresLastSnap = 0;
 
   onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore }): void {
     this.store = options.store;
@@ -262,8 +269,36 @@ export class WorldRoom extends Room {
       console.error("[WorldRoom] falha ao carregar personagem", e);
       throw new ServerError(4004, "armazenamento indisponivel");
     }
-    const save = raw === null ? undefined : (parseSave(raw) ?? undefined);
-    if (raw !== null && !save) console.error(`[WorldRoom] save invalido ignorado (${keyId.slice(0, 8)})`);
+    let save = raw === null ? undefined : (parseSave(raw) ?? undefined);
+    if (raw !== null && !save) {
+      // Etapa 12: registro atual invalido. Antes de jogar "zerado" (e sobrescrever), tenta o snapshot valido mais novo.
+      console.error(`[WorldRoom] save invalido (${keyId.slice(0, 8)}): tentando recuperar de um snapshot`);
+      this.audit("save_invalido", keyId);
+      let rec: Recovered<PlayerSave> | null = null;
+      try {
+        rec = await recoverFromSnapshots(this.store, keyId, parseSave);
+      } catch (e) {
+        console.error("[WorldRoom] falha ao ler snapshots", e);
+      }
+      if (rec) {
+        try {
+          await this.store.snapshot?.(keyId, "invalido_antes_de_restaurar"); // guarda o quebrado para analise
+          await this.store.save(keyId, rec.raw);
+        } catch (e) {
+          console.error("[WorldRoom] falha ao regravar o personagem recuperado", e);
+        }
+        save = rec.value;
+        this.audit("personagem_recuperado", keyId, { snapshot: rec.snapshotId, em: rec.at, motivo: rec.reason, ignorados: rec.skipped });
+        console.log(`[WorldRoom] personagem ${keyId.slice(0, 8)} recuperado do snapshot ${rec.snapshotId} (${rec.at})`);
+      } else {
+        try {
+          await this.store.snapshot?.(keyId, "invalido_sem_recuperacao"); // o registro quebrado vai ser sobrescrito: fica uma copia
+        } catch {
+          /* melhor esforco */
+        }
+        this.audit("personagem_sem_recuperacao", keyId);
+      }
+    }
     return { keyId, save };
   }
 
@@ -299,8 +334,11 @@ export class WorldRoom extends Room {
       keyId,
       lastSave: Date.now(),
       saving: false,
+      savedInv: life.invVersion,
+      lastSnap: Date.now(),
     });
     if (keyId) this.activeKeys.set(keyId, client.sessionId);
+    if (keyId) this.audit("entrou", keyId, { restaurado: !!auth?.save });
     console.log(`[WorldRoom] entrou: ${client.sessionId}${auth?.save ? " (personagem restaurado)" : ""} (${this.players.size}/${this.maxClients})`);
   }
 
@@ -328,55 +366,106 @@ export class WorldRoom extends Room {
     console.log(`[WorldRoom] saiu: ${client.sessionId} (${this.players.size} restantes)`);
   }
 
-  // Salva sem travar o jogo: uma gravacao por vez por jogador; erro so vai para o log.
-  private async persist(p: PlayerEntry): Promise<void> {
-    if (!p.keyId || !this.store || p.saving) return;
+  // Salva sem travar o jogo: uma gravacao por vez por jogador; erro so vai para o log (e a mudanca fica "por gravar": tenta de novo).
+  // `reason`: evento importante (morte, saida, desligamento): alem de gravar, guarda um snapshot de historico.
+  private async persist(p: PlayerEntry, reason?: string): Promise<void> {
+    if (!p.keyId || !this.store) return;
+    if (p.saving) {
+      if (reason) p.pendingReason = reason; // nunca duas gravacoes do mesmo personagem ao mesmo tempo (a ordem de chegada no banco nao e garantida)
+      return;
+    }
     p.saving = true;
-    p.lastSave = Date.now();
+    const now = Date.now();
+    p.lastSave = now;
+    const inv = p.life.invVersion;
     try {
       await this.store.save(p.keyId, makeSave(p.life, p.sim.x, p.sim.y));
+      p.savedInv = inv;
+      if (reason || now - p.lastSnap >= SNAPSHOT_MS) {
+        p.lastSnap = now;
+        await this.store.snapshot?.(p.keyId, reason ?? "periodico");
+      }
     } catch (e) {
       console.error("[WorldRoom] falha ao salvar personagem", e);
     } finally {
       p.saving = false;
+      if (p.pendingReason) {
+        const r = p.pendingReason;
+        p.pendingReason = undefined;
+        void this.persist(p, r);
+      }
     }
   }
 
+  // Espera uma gravacao em andamento terminar (so no desligamento).
+  private async idle(p: PlayerEntry): Promise<void> {
+    for (let i = 0; i < 100 && p.saving; i++) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  // Evento critico para a auditoria (nunca trava nem derruba o jogo).
+  private audit(kind: string, player?: string, detail?: unknown): void {
+    const st = this.store;
+    if (!st?.audit) return;
+    st.audit({ kind, player, detail }).catch((e) => console.error("[WorldRoom] falha ao gravar auditoria", e instanceof Error ? e.message : e));
+  }
+
   // Le as estruturas salvas. Falha ou dado invalido: NAO libera construcao nem grava (tenta de novo a cada 10 s).
+  // Etapa 12: dado invalido tenta primeiro o snapshot valido mais novo.
+  private applyStructures(w: StructureWorld): void {
+    this.structures = w;
+    this.world.extraSolid = w.solidAt;
+    this.world.extraOpaque = w.opaqueAt;
+    this.structuresReady = true;
+  }
+
   private async loadStructures(): Promise<void> {
     this.structuresLastTry = Date.now();
     if (!this.store) {
       this.structuresReady = true; // sem armazenamento (testes): vale so enquanto a sala existir
       return;
     }
+    const parse = (raw: unknown): StructureWorld | null => StructureWorld.fromSave(raw, this.world.width, this.world.height, this.world.seed, this.world.tileSize);
     try {
       const raw = await this.store.load(STRUCTURES_ID);
       if (raw === null) {
         this.structuresReady = true; // mundo novo, nada construido ainda
         return;
       }
-      const w = StructureWorld.fromSave(raw, this.world.width, this.world.height, this.world.seed, this.world.tileSize);
-      if (!w) {
-        console.error("[WorldRoom] estruturas salvas invalidas (ou de outra seed): construcao DESLIGADA, nada sera sobrescrito");
+      const w = parse(raw);
+      if (w) {
+        this.applyStructures(w);
+        console.log(`[WorldRoom] ${w.count} tiles com estrutura restaurados`);
         return;
       }
-      this.structures = w;
-      this.world.extraSolid = w.solidAt;
-      this.world.extraOpaque = w.opaqueAt;
-      this.structuresReady = true;
-      console.log(`[WorldRoom] ${w.count} tiles com estrutura restaurados`);
+      console.error("[WorldRoom] estruturas salvas invalidas (ou de outra seed): tentando recuperar de um snapshot");
+      this.audit("estruturas_invalidas");
+      const rec = await recoverFromSnapshots(this.store, STRUCTURES_ID, parse);
+      if (!rec) {
+        console.error("[WorldRoom] nenhum snapshot valido: construcao DESLIGADA, nada sera sobrescrito");
+        return;
+      }
+      await this.store.snapshot?.(STRUCTURES_ID, "invalido_antes_de_restaurar"); // guarda o quebrado para analise
+      await this.store.save(STRUCTURES_ID, rec.raw); // o snapshot passa a ser o registro atual
+      this.applyStructures(rec.value);
+      this.audit("estruturas_recuperadas", undefined, { snapshot: rec.snapshotId, em: rec.at, motivo: rec.reason, ignorados: rec.skipped });
+      console.log(`[WorldRoom] estruturas recuperadas do snapshot ${rec.snapshotId} (${rec.at}): ${rec.value.count} tiles`);
     } catch (e) {
       console.error("[WorldRoom] falha ao carregar estruturas (construcao desligada, tentando de novo)", e);
     }
   }
 
-  private async persistStructures(): Promise<void> {
+  private async persistStructures(reason?: string): Promise<void> {
     if (!this.store || !this.structuresReady || this.structuresSaving) return;
     this.structuresSaving = true;
     this.structuresLastSave = Date.now();
     this.structures.dirty = false; // mudancas durante a gravacao marcam de novo
     try {
       await this.store.save(STRUCTURES_ID, this.structures.toSave(this.world.seed));
+      const now = Date.now();
+      if (reason || now - this.structuresLastSnap >= SNAPSHOT_MS) {
+        this.structuresLastSnap = now;
+        await this.store.snapshot?.(STRUCTURES_ID, reason ?? "periodico");
+      }
     } catch (e) {
       this.structures.dirty = true;
       console.error("[WorldRoom] falha ao salvar estruturas", e);
@@ -415,17 +504,20 @@ export class WorldRoom extends Room {
   private release(sessionId: string): void {
     const p = this.players.get(sessionId);
     if (!p) return;
-    void this.persist(p);
+    void this.persist(p, "saida");
+    if (p.keyId) this.audit("saiu", p.keyId);
     if (p.keyId && this.activeKeys.get(p.keyId) === sessionId) this.activeKeys.delete(p.keyId);
     this.players.delete(sessionId);
   }
 
   async onDispose(): Promise<void> {
-    for (const p of this.players.values()) await this.persist(p);
-    if (this.structures.dirty) {
-      this.structuresSaving = false;
-      await this.persistStructures();
+    for (const p of this.players.values()) {
+      await this.idle(p);
+      await this.persist(p, "desligamento");
+      await this.idle(p);
     }
+    for (let i = 0; i < 100 && this.structuresSaving; i++) await new Promise((r) => setTimeout(r, 50));
+    if (this.structuresReady) await this.persistStructures("desligamento");
   }
 
   // Posicoes iniciais levemente diferentes dentro da area livre do spawn.
@@ -533,13 +625,15 @@ export class WorldRoom extends Room {
         if (p.life.tick(p.connected ? dt * this.survivalScale : 0, moving, now)) {
           p.sim.stop();
           this.loot.addDrop(p.sim.x, p.sim.y, p.life.lost, now); // mochila no local da morte (outros podem pegar)
-          void this.persist(p); // salva ja: sem isso, reiniciar o servidor devolveria os itens que estao na mochila
+          void this.persist(p, "morte"); // salva ja: sem isso, reiniciar o servidor devolveria os itens que estao na mochila
           const killer = killCredit(p.life, id, now);
           if (killer && this.players.has(killer)) this.emitCombat({ kind: "kill", attacker: killer, victim: id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10 });
+          if (p.keyId) this.audit("morte", p.keyId, { itens_perdidos: p.life.lost.reduce((n, s) => n + s.qty, 0), por: killer ? this.players.get(killer)?.keyId ?? null : null });
           console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens${killer ? `; morto por ${killer}` : ""})`);
         }
       }
       if (p.connected && now - p.lastSave >= AUTOSAVE_MS) void this.persist(p);
+      else if (p.connected && p.keyId && p.life.invVersion !== p.savedInv && now - p.lastSave >= CRITICAL_SAVE_MS) void this.persist(p); // mudanca de inventario: nao espera 30 s
       snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead, ...(p.torchOn && !p.life.dead && p.life.inventory.count("torch") > 0 ? { torch: true } : {}) });
     }
     const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps, mobs: this.mobs.snaps() };
