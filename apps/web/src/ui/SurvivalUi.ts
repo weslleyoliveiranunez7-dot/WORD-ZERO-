@@ -1,4 +1,4 @@
-import { ITEMS, type InventoryUpdateMsg, type PlayerStateMsg, type Slot } from "@worldzero/shared";
+import { ITEMS, Inventory, RECIPES, RECIPE_IDS, missingFor, type InventoryUpdateMsg, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
 
 // Etapa 6: barras de vida/fome/sede/energia, inventario e tela de morte (DOM, fora do canvas).
 // Esta classe SO MOSTRA o que o servidor mandou e devolve "intencoes" (usar slot, reaparecer).
@@ -11,7 +11,7 @@ const BARS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; col
   { key: "energy", label: "Energia", color: "#d8cf3a" },
 ];
 
-const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏" };
+const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏", workbench: "🛠️", axe: "🪓", pickaxe: "⛏️", spear: "🔱" };
 
 const div = (style: Partial<CSSStyleDeclaration>, parent?: HTMLElement): HTMLDivElement => {
   const el = document.createElement("div");
@@ -23,12 +23,16 @@ const div = (style: Partial<CSSStyleDeclaration>, parent?: HTMLElement): HTMLDiv
 export class SurvivalUi {
   onUse: (slot: number) => void = () => {};
   onRespawn: () => void = () => {};
+  onCraft: (recipe: RecipeId) => void = () => {}; // Etapa 10: so uma INTENCAO; o servidor confere ingredientes, bancada, espaco e tempo
   private root: HTMLDivElement;
   private fills = new Map<string, HTMLDivElement>();
   private values = new Map<string, HTMLSpanElement>();
   private warn: HTMLDivElement;
   private weaponLine: HTMLDivElement;
   private grid: HTMLDivElement;
+  private craftBtn: HTMLButtonElement;
+  private craftPanel: HTMLDivElement;
+  private craftOpen = false;
   private death: HTMLDivElement;
   private deathInfo: HTMLDivElement;
   private deathBtn: HTMLButtonElement;
@@ -58,6 +62,20 @@ export class SurvivalUi {
     // inventario: grade 4x3 no canto inferior direito (joystick fica no esquerdo)
     this.grid = div(
       { position: "absolute", right: "8px", bottom: "8px", display: "grid", gridTemplateColumns: "repeat(4, 46px)", gap: "4px", pointerEvents: "auto", touchAction: "manipulation" },
+      this.root,
+    );
+
+    // Etapa 10: botao FABRICAR (abaixo das barras, lado esquerdo) e lista de receitas. So mostra; quem fabrica e o servidor.
+    this.craftBtn = document.createElement("button");
+    this.craftBtn.textContent = "FABRICAR";
+    Object.assign(this.craftBtn.style, { position: "absolute", top: "170px", left: "8px", font: "bold 12px monospace", padding: "8px 12px", borderRadius: "6px", border: "2px solid #fff", background: "rgba(60,50,20,0.85)", color: "#fff", pointerEvents: "auto", touchAction: "manipulation" });
+    this.craftBtn.onclick = (): void => {
+      this.craftOpen = !this.craftOpen;
+      this.refreshCraft();
+    };
+    this.root.appendChild(this.craftBtn);
+    this.craftPanel = div(
+      { position: "absolute", top: "210px", left: "8px", width: "230px", maxHeight: "calc(100% - 330px)", overflowY: "auto", display: "none", flexDirection: "column", gap: "4px", padding: "6px", background: "rgba(0,0,0,0.75)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: "6px", pointerEvents: "auto", touchAction: "pan-y" },
       this.root,
     );
 
@@ -105,6 +123,8 @@ export class SurvivalUi {
       this.deathInfo.textContent = `Itens perdidos: ${lost}.`;
       this.respawnAt = performance.now() + s.respawnInMs;
       this.death.style.display = "flex";
+      this.craftOpen = false;
+      this.refreshCraft();
       this.refreshDeathButton();
     } else {
       this.death.style.display = "none";
@@ -132,6 +152,31 @@ export class SurvivalUi {
         cell.onclick = (): void => this.onUse(i);
       }
     });
+    this.refreshCraft();
+  }
+
+  // Lista as receitas. Verde = parece que da (so para ajudar o jogador: o servidor sempre refaz a conta); cinza = falta algo.
+  private refreshCraft(): void {
+    this.craftPanel.style.display = this.craftOpen ? "flex" : "none";
+    if (!this.craftOpen) return;
+    const inv = new Inventory();
+    this.slots.forEach((s, i) => {
+      if (s && i < inv.slots.length) inv.slots[i] = { id: s.id, qty: s.qty };
+    });
+    this.craftPanel.textContent = "";
+    for (const id of RECIPE_IDS) {
+      const r = RECIPES[id];
+      const miss = missingFor(inv, id);
+      const row = div(
+        { padding: "6px", borderRadius: "5px", border: "1px solid rgba(255,255,255,0.3)", background: miss ? "rgba(40,40,40,0.8)" : "rgba(40,100,50,0.85)", opacity: miss ? "0.7" : "1", userSelect: "none" },
+        this.craftPanel,
+      );
+      const title = div({ fontWeight: "bold", fontSize: "12px" }, row);
+      title.textContent = `${ICON[r.output.id] ?? "?"} ${ITEMS[r.output.id].name}${r.output.qty > 1 ? ` x${r.output.qty}` : ""}`;
+      const need = div({ fontSize: "10px", marginTop: "2px" }, row);
+      need.textContent = r.inputs.map((i) => `${i.qty}x ${ITEMS[i.id].name} (${inv.count(i.id)})`).join(" + ") + (r.station ? ` | precisa de ${ITEMS[r.station].name}` : "");
+      row.onclick = (): void => this.onCraft(id); // sempre manda: o servidor responde se vale
+    }
   }
 
   private refreshDeathButton(): void {
