@@ -7,7 +7,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit -p .",
     "bot": "tsx src/bot.ts",
-    "attack": "tsx src/attacker.ts"
+    "attack": "tsx src/attacker.ts",
+    "survivor": "tsx src/survivor.ts"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.15.0",
