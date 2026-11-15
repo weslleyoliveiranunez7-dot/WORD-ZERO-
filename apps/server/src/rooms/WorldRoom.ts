@@ -4,6 +4,8 @@ import {
   ChunkedWorld,
   KICK_CODE,
   LootWorld,
+  MobWorld,
+  PLAYER_ATTACK_DAMAGE,
   MAX_REJECT_NOTICES_PER_SECOND,
   PROTOCOL_VERSION,
   PlayerGuard,
@@ -14,6 +16,7 @@ import {
   parseSave,
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
+  inspectAttack,
   inspectInput,
   inspectInteract,
   inspectRespawn,
@@ -60,6 +63,7 @@ interface PlayerEntry {
 export class WorldRoom extends Room {
   private world = new ChunkedWorld(); // mundo de teste 8x8: no maximo 64 chunks em memoria
   private loot = new LootWorld(); // Etapa 7: recursos esgotados e mochilas no chao (so o servidor decide)
+  private mobs = new MobWorld(); // Etapa 8: zumbis e cervos (IA so aqui; cliente so desenha)
   private players = new Map<string, PlayerEntry>();
   private tick = 0;
   private survivalScale = 1;
@@ -69,6 +73,7 @@ export class WorldRoom extends Room {
 
   onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore }): void {
     this.store = options.store;
+    this.mobs.populate(this.world);
     this.maxClients = options.maxPlayers ?? this.maxClients;
     this.survivalScale = options.survivalScale ?? 1;
 
@@ -95,6 +100,23 @@ export class WorldRoom extends Room {
       const r = inspectInteract(raw);
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
       this.finish(client, p, "REQUEST_INTERACT", p.life.interact(r.msg.actionId, Date.now(), this.world, this.loot, p.sim.x, p.sim.y));
+    });
+
+    // Etapa 8: golpe corpo a corpo. Alvo = criatura viva mais proxima da posicao que o SERVIDOR conhece.
+    this.onMessage("REQUEST_ATTACK", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectAttack(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      const now = Date.now();
+      const target = this.mobs.nearest(p.sim.x, p.sim.y);
+      if (!target) return this.finish(client, p, "REQUEST_ATTACK", { ok: false, reason: "nada_por_perto", weight: 0 });
+      const res = p.life.startAttack(r.msg.actionId, now);
+      if (res.ok) {
+        const hit = this.mobs.damage(target, PLAYER_ATTACK_DAMAGE, now);
+        if (hit.killed) this.loot.addDrop(target.x, target.y, hit.drops, now); // loot da criatura no chao
+      }
+      this.finish(client, p, "REQUEST_ATTACK", res);
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
@@ -307,6 +329,10 @@ export class WorldRoom extends Room {
     const dt = dtMs / 1000;
     const now = Date.now();
     this.loot.tick(now);
+    // criaturas so enxergam jogadores vivos e conectados
+    const targets = [];
+    for (const [pid, q] of this.players) if (q.connected && !q.life.dead) targets.push({ id: pid, x: q.sim.x, y: q.sim.y });
+    for (const h of this.mobs.tick(dt, now, targets, this.world)) this.players.get(h.playerId)?.life.survival.damage(h.damage);
     const snaps: PlayerSnap[] = [];
     for (const [id, p] of this.players) {
       if (p.life.dead) p.sim.stop();
@@ -326,7 +352,7 @@ export class WorldRoom extends Room {
       if (p.connected && now - p.lastSave >= AUTOSAVE_MS) void this.persist(p);
       snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead });
     }
-    const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps };
+    const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps, mobs: this.mobs.snaps() };
     this.broadcast("WORLD_SNAPSHOT", snapshot);
     for (const client of this.clients) {
       const p = this.players.get(client.sessionId);
