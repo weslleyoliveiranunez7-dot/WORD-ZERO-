@@ -324,6 +324,13 @@ Apagados: nenhum.
 
 ## Dia e noite + tocha (2026-11-15)
 - Horario = funcao do relogio (`gameMinutesAt`), igual em todos os aparelhos sem rede. Escuridao maxima 03:00 (alpha ~0.985). Quando existir o relogio do backend (Etapa 14), trocar o "agora" por ele.
-- Tocha: item e receita no `shared` (o servidor valida como qualquer receita). A LUZ e so desenho no cliente: outros jogadores NAO veem a tocha de quem esta perto (limitacao conhecida; exigiria campo novo no snapshot + PROTOCOL_VERSION).
+- Tocha: item e receita no `shared` (o servidor valida como qualquer receita). A luz e desenhada no cliente, mas QUEM esta com a tocha acesa e decidido pelo servidor (ver abaixo).
 - Tocha nao gasta (sem durabilidade/combustivel ainda). Criaturas nao reagem a luz.
 - Verificado: 5 testes novos + crafting/building/loot/combat/security/persist/network passando (shim Node); `tsc` do `shared` limpo. NAO verificado: cliente no navegador/celular (desempenho da camada escura no A04, aparencia).
+
+## Campo novo: tocha visivel para todos (PROTOCOL_VERSION 8)
+- `REQUEST_TORCH { on: boolean }` (cliente -> servidor): so uma preferencia. `inspectTorch` recusa campos extras (peso 5) e tipo errado (peso 3).
+- `PlayerSnap.torch?: boolean` (servidor -> todos): so existe quando true. O servidor so envia true se o jogador pediu acesa E esta vivo E tem >= 1 `torch` no inventario (cliente nao consegue forjar).
+- Cliente: `SnapshotBuffer` repassa `torch`; `DayNight` desenha a tocha na mao e a luz (buraco na escuridao + brilho) de cada jogador com tocha acesa.
+- Versao do protocolo mudou (7 -> 8): cliente e servidor antigos nao entram juntos (esperado).
+- Testes: `torch.test.ts` (5, passam no shim Node); `attacker.ts` ganhou 2 checagens (tocha forjada e pedido invalido). NAO verificado: servidor real, atacante e cliente (a rodar no workflow).

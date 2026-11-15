@@ -1,6 +1,7 @@
 # Changelog
 
 ## Dia e noite, tocha e visual (2026-11-15)
+- Protocolo v8: `REQUEST_TORCH` + `PlayerSnap.torch`: a tocha acesa aparece para todos os jogadores (decidida pelo servidor).
 - `shared/daynight.ts`: horario do jogo como funcao do relogio (1 dia = 24 min reais); escuridao maxima as 03:00; transicao suave (smoothstep). 5 testes novos.
 - Item `torch` (Tocha) e receita `torch` (2 madeira, sem bancada).
 - Cliente: camada de escuridao com luz da tocha (RenderTexture), tocha na mao, botao/tecla T, relogio na tela.
