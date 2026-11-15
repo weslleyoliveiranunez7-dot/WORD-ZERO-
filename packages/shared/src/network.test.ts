@@ -4,7 +4,7 @@ import type { WorldSnapshot } from "./index";
 
 const snap = (tick: number, ...ps: [string, number, number][]): WorldSnapshot => ({
   tick,
-  players: ps.map(([id, x, y]) => ({ id, x, y, seq: 0 })),
+  players: ps.map(([id, x, y]) => ({ id, x, y, seq: 0, dead: false })),
 });
 
 describe("parseInput", () => {
@@ -17,7 +17,7 @@ describe("parseInput", () => {
     }
   });
   it("parseJoinOptions", () => {
-    expect(parseJoinOptions({ protocol: 1 })).toEqual({ protocol: 1 });
+    expect(parseJoinOptions({ protocol: 2 })).toEqual({ protocol: 2 });
     expect(parseJoinOptions({})).toBe(null);
     expect(parseJoinOptions(null)).toBe(null);
   });

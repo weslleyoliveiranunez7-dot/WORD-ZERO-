@@ -1,4 +1,4 @@
-import { parseInput, type PlayerInputMsg } from "./protocol";
+import { parseInput, type PlayerInputMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -60,4 +60,33 @@ export function inspectInput(raw: unknown): InputInspection {
   }
   const input = parseInput(raw);
   return input ? { input } : { input: null, reason: "valores_invalidos", weight: 3 };
+}
+
+// ---- Etapa 6: validacao estrita das acoes (so aceita exatamente os campos esperados) ----
+export type ActionInspection<T> = { msg: T; reason?: undefined } | { msg: null; reason: string; weight: number };
+
+const isInt = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+const MAX_ACTION_ID = 2_000_000_000;
+
+function inspectKeys(raw: unknown, allowed: string[]): { reason: string; weight: number } | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { reason: "formato_invalido", weight: 3 };
+  const keys = Object.keys(raw);
+  if (keys.length > 8 || keys.some((k) => !allowed.includes(k))) return { reason: "campos_extras", weight: 5 };
+  return null;
+}
+
+export function inspectUseItem(raw: unknown, slots: number): ActionInspection<UseItemMsg> {
+  const bad = inspectKeys(raw, ["slot", "actionId"]);
+  if (bad) return { msg: null, ...bad };
+  const { slot, actionId } = raw as Record<string, unknown>;
+  if (!isInt(slot, 0, slots - 1) || !isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { slot, actionId } };
+}
+
+export function inspectRespawn(raw: unknown): ActionInspection<RespawnMsg> {
+  const bad = inspectKeys(raw, ["actionId"]);
+  if (bad) return { msg: null, ...bad };
+  const { actionId } = raw as Record<string, unknown>;
+  if (!isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { actionId } };
 }

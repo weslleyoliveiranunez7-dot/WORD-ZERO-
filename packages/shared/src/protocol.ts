@@ -1,6 +1,8 @@
+import type { ItemStack, Slot } from "./inventory";
+
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2; // 2 = Etapa 6 (sobrevivencia, inventario, PlayerSnap.dead)
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -47,6 +49,7 @@ export interface PlayerSnap {
   x: number; // pixels
   y: number;
   seq: number; // ultimo input processado deste jogador (usado na reconciliacao, Etapa 5)
+  dead: boolean; // Etapa 6: jogador morto (o cliente esconde o boneco)
 }
 
 export interface WorldSnapshot {
@@ -73,4 +76,29 @@ export function parseJoinOptions(raw: unknown): JoinOptions | null {
 // Resposta do servidor quando recusa uma mensagem/acao (enviada no maximo 1x por segundo por jogador).
 export interface ActionRejectedMsg {
   reason: string;
+}
+
+// ---- Etapa 6: estado de sobrevivencia (servidor -> dono do jogador) ----
+export interface PlayerStateMsg {
+  health: number; // inteiros 0..100
+  hunger: number;
+  thirst: number;
+  energy: number;
+  speedMul: number; // 0.6..1 (o cliente usa so para prever o proprio movimento)
+  dead: boolean;
+  respawnInMs: number; // quando morto: tempo que falta para poder reaparecer
+  lost: ItemStack[]; // quando morto: o que foi perdido
+}
+
+export interface InventoryUpdateMsg {
+  slots: Slot[];
+}
+
+// Acoes do cliente (cliente -> servidor). actionId e crescente por cliente: repetir um id nao repete a acao.
+export interface UseItemMsg {
+  slot: number;
+  actionId: number;
+}
+export interface RespawnMsg {
+  actionId: number;
 }

@@ -10,6 +10,7 @@ export class PlayerSim {
   ix = 0;
   iy = 0;
   seq = 0;
+  speedMul = 1; // 0..1, definido pelo servidor (energia baixa = mais lento). Nunca vem do cliente.
 
   constructor(start: Vec2) {
     this.x = start.x;
@@ -26,6 +27,13 @@ export class PlayerSim {
     return true;
   }
 
+  // So o servidor chama (reaparecimento). Nunca a partir de dados do cliente.
+  teleport(p: Vec2): void {
+    this.x = p.x;
+    this.y = p.y;
+    this.stop();
+  }
+
   stop(): void {
     this.ix = 0;
     this.iy = 0;
@@ -35,7 +43,7 @@ export class PlayerSim {
   // volta para a posicao anterior e devolve corrected=true (isso indica BUG no servidor, nao cheat).
   step(world: SolidMap, dtSeconds: number): { corrected: boolean } {
     const dt = Math.min(Math.max(dtSeconds, 0), MAX_STEP_SECONDS);
-    const next = moveWithCollision(world, this, inputToVelocity(this.ix, this.iy), dt);
+    const next = moveWithCollision(world, this, inputToVelocity(this.ix, this.iy, PLAYER_SPEED * Math.max(0, Math.min(1, this.speedMul))), dt);
     const moved = Math.hypot(next.x - this.x, next.y - this.y);
     const maxMove = PLAYER_SPEED * dt * 1.001 + 0.01;
     if (!Number.isFinite(next.x) || !Number.isFinite(next.y) || moved > maxMove || collidesAt(world, next.x, next.y)) {

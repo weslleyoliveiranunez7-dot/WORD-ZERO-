@@ -6,3 +6,7 @@ export * from "./movement";
 export * from "./interpolation";
 export * from "./security";
 export * from "./playersim";
+export * from "./items";
+export * from "./inventory";
+export * from "./survival";
+export * from "./life";
