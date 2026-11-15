@@ -1,6 +1,10 @@
 import { isSolidTile } from "./map";
 import type { TileMap } from "./map";
 
+// Aceita o mapa fixo (TileMap) ou o mundo em chunks (ChunkedWorld).
+export type SolidMap = TileMap | { tileSize: number; isSolid(tx: number, ty: number): boolean };
+const solid = (m: SolidMap, tx: number, ty: number): boolean => ("isSolid" in m ? m.isSolid(tx, ty) : isSolidTile(m, tx, ty));
+
 // Logica pura de movimento e colisao. Fica no shared porque na Etapa 5 o
 // SERVIDOR vai usar exatamente a mesma funcao para validar o movimento.
 
@@ -23,7 +27,7 @@ export function inputToVelocity(ix: number, iy: number, speed: number = PLAYER_S
   return { x: ix * k, y: iy * k };
 }
 
-export function collidesAt(map: TileMap, x: number, y: number, half: number = PLAYER_HALF_SIZE): boolean {
+export function collidesAt(map: SolidMap, x: number, y: number, half: number = PLAYER_HALF_SIZE): boolean {
   const ts = map.tileSize;
   const x0 = Math.floor((x - half) / ts);
   const x1 = Math.floor((x + half - EPS) / ts);
@@ -31,7 +35,7 @@ export function collidesAt(map: TileMap, x: number, y: number, half: number = PL
   const y1 = Math.floor((y + half - EPS) / ts);
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      if (isSolidTile(map, tx, ty)) return true;
+      if (solid(map, tx, ty)) return true;
     }
   }
   return false;
@@ -39,7 +43,7 @@ export function collidesAt(map: TileMap, x: number, y: number, half: number = PL
 
 // Move um eixo por vez: assim o personagem DESLIZA na parede em vez de grudar.
 export function moveWithCollision(
-  map: TileMap,
+  map: SolidMap,
   pos: Vec2,
   vel: Vec2,
   dt: number,
