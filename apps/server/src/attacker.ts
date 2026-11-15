@@ -27,9 +27,11 @@ async function main(): Promise<void> {
   const track: { t: number; x: number; y: number }[] = [];
   const reasons: string[] = [];
   let leftCode: number | undefined;
+  let selfTorch = false;
   room.onMessage("WORLD_SNAPSHOT", (s: WorldSnapshot) => {
     const me = s.players.find((p) => p.id === id);
     if (me) {
+      selfTorch = me.torch === true;
       pos = { x: me.x, y: me.y };
       track.push({ t: Date.now(), x: me.x, y: me.y });
     }
@@ -194,6 +196,14 @@ async function main(): Promise<void> {
   room.send("REQUEST_USE_ITEM", { slot: 1, actionId: replayId });
   await sleep(1500);
   check("repetir o mesmo actionId nao consome duas vezes", afterFirst - total() === 0 && mid - afterFirst <= 1, `itens ${mid} -> ${afterFirst} -> ${total()}`);
+  // tocha: o cliente so PEDE; sem tocha no inventario o servidor nunca a mostra aos outros, e campos extras sao recusados
+  const reasonsBeforeTorch = reasons.length;
+  room.send("REQUEST_TORCH", { on: true });
+  room.send("REQUEST_TORCH", { on: true, torch: true });
+  room.send("REQUEST_TORCH", { on: "sim" });
+  await sleep(1300);
+  check("tocha forjada (sem ter o item) nao aparece no snapshot", selfTorch === false, `torch no snapshot: ${selfTorch}`);
+  check("pedido de tocha com campo extra/valor invalido recusado", reasons.slice(reasonsBeforeTorch).some((r) => r === "campos_extras" || r === "valores_invalidos"), `motivos novos: ${reasons.slice(reasonsBeforeTorch).join(",") || "nenhum"}`);
   await sleep(3000); // deixa a pontuacao de violacoes decair antes do flood
 
   // 5) flood: milhares de mensagens de uma vez
