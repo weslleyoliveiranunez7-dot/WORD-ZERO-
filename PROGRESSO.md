@@ -4,8 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 3 (Mapa em chunks) - código escrito; lógica testada em Node, cliente/tela ainda não conferidos**
-(Etapa 2 continua pendente de conferência visual no celular.)
+Etapa atual: **Etapa 4 (Servidor multiplayer) - código escrito; lógica de `shared` testada em Node; servidor, bots e cliente AINDA NÃO rodados**
+(Etapa 3: usuário relatou 10-20 FPS no celular; correção por textura enviada, resultado não informado.)
 
 ## Regras que valem sempre (resumo do Documento Mestre)
 - Executar UMA etapa por vez; só avançar após teste e aprovação do usuário.
@@ -30,7 +30,7 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 1 | Fundação (monorepo, Vite, Phaser, Colyseus, CI) | Concluída (workflow Verificar passou) |
 | 2 | Primeiro mapa 2D (personagem, câmera, colisão, teclado, joystick) | Escrita; falta conferir visualmente no celular |
 | 3 | Mapa em chunks | Escrita; falta typecheck/build do cliente e conferir no celular |
-| 4 | Servidor multiplayer (2 jogadores) | Pendente |
+| 4 | Servidor multiplayer (2 jogadores) | Escrita; falta o workflow provar 2 clientes e teste real em 2 aparelhos |
 | 5 | Autoridade e segurança | Pendente |
 | 6 | Personagem e sobrevivência | Pendente |
 | 7 | Coleta e loot | Pendente |
@@ -91,6 +91,23 @@ Apagados: nenhum.
 - NÃO verificado: typecheck e build do cliente (Phaser/Vite) com `GameScene.ts` e `Minimap.ts`; desenho dos chunks, minimapa e desempenho no celular/A04; vitest real (o workflow confirma).
 - Ainda não existe: mundo maior que 8x8 (ampliar só depois de medir no A04), persistência de alterações em chunks, sincronização de chunks no servidor (Etapa 4/5).
 
+## O que já foi feito (Etapa 4)
+- `shared/protocol.ts`: tipos `PlayerInputMsg`, `PlayerSnap`, `WorldSnapshot`, `JoinOptions`, validação `parseInput`/`parseJoinOptions`, constantes (20 Hz, 100 ms de interpolação, 15 s de reconexão). Sem Colyseus Schema: mensagens JSON (`PLAYER_INPUT` cliente->servidor, `WORLD_SNAPSHOT` servidor->todos).
+- `shared/interpolation.ts`: `SnapshotBuffer` (interpola, não extrapola). `network.test.ts`: 7 testes.
+- `server/WorldRoom.ts`: servidor simula o movimento com `moveWithCollision` (mesma função do cliente) a 20 Hz; recusa protocolo diferente (`onAuth`); `allowReconnection` por 15 s; limite por `MAX_PLAYERS` (padrão 50, 1-200).
+- `server/src/bot.ts`: cliente de teste (processo separado) que entra, vê o outro, anda e (opção `--reconnect`) derruba a conexão e reconecta.
+- Cliente: `net/NetClient.ts` (conecta, reconecta sozinho), botão JOGAR ONLINE, jogadores remotos azuis interpolados, HUD mostra status e nº de jogadores. URL do servidor: `?server=wss://...` > `VITE_SERVER_URL` > localhost.
+- Workflow: passo "Teste multiplayer" liga 2 bots em processos separados contra o servidor real.
+
+## Verificado e não verificado (Etapa 4)
+- Verificado (Node + tsc): typecheck de `shared` e testes de `parseInput`/`SnapshotBuffer`.
+- NÃO verificado: `pnpm install` com `colyseus.js`; typecheck do servidor, bot e cliente; servidor aceitando `onAuth`/`allowReconnection`; API `client.reconnect(token)` e `room.reconnectionToken` do colyseus.js 0.15 (suposição); os 2 bots no workflow; qualquer teste em 2 aparelhos.
+- Limitações conhecidas: sem reconciliação por `seq` (cliente só corrige se divergir >64 px); servidor sem anti-cheat (Etapa 5); mundo de teste único e todos os jogadores na mesma sala; sem nomes/contas.
+- Para jogar online pelo celular é preciso um servidor PÚBLICO com `wss://` (GitHub Pages é https e só hospeda o cliente). Hospedagem ainda é decisão em aberto.
+
+## Critério de aceite da Etapa 4
+Dois aparelhos/navegadores veem os mesmos jogadores e movimentos. Só marcar como concluída quando: (1) o passo "Teste multiplayer" do workflow passar (2 bots em processos separados se veem, o servidor move cada um, e reconexão mantém o mesmo sessionId) e (2) o usuário abrir 2 aparelhos num servidor público e se ver andando.
+
 ## Problema encontrado no celular (Etapa 3)
 - Usuário mediu 10 a 20 FPS. Causa provável: um `Graphics` por chunk é reexecutado a cada frame (~256 comandos x 9-12 chunks). Correção: cada chunk é desenhado uma vez e convertido em textura (`generateTexture`), 1 imagem por chunk; `antialias:false`/`pixelArt:true` no Phaser. NÃO verificado no celular; se continuar baixo, medir de novo (ver HUD) antes de mexer em outra coisa (próximos suspeitos: zoom/resolução da tela, minimapa, joystick).
 
@@ -133,7 +150,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 3 entregue em `WORLD-ZERO-etapa3.zip` (só os arquivos alterados). Depois de aprovada: Etapa 4 (servidor multiplayer), prompt na Parte 16 do Documento Mestre.
+3. Etapa 4 entregue em `WORLD-ZERO-etapa4.zip` (só os arquivos alterados, inclui `verificar.yml` novo que o usuário cola à mão). Depois de aprovada: Etapa 5 (autoridade e segurança).
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.

@@ -1,6 +1,12 @@
 # Changelog
 
 ## [Não lançado]
+### Etapa 4 - Servidor multiplayer (2026-11-15)
+- Servidor simula o movimento (mesma função do cliente) a 20 Hz e envia `WORLD_SNAPSHOT`; recebe só `PLAYER_INPUT` validado; limite `MAX_PLAYERS`; reconexão por 15 s; recusa protocolo incompatível.
+- Cliente: botão JOGAR ONLINE, jogadores remotos interpolados, reconexão automática, `?server=` para apontar o servidor.
+- Bot de teste (`apps/server/src/bot.ts`) e passo do workflow com 2 clientes em processos separados.
+- Ainda não rodado: servidor, bots e cliente (ver PROGRESSO.md).
+
 ### Etapa 3 - Mapa em chunks (2026-11-14)
 - Shared: `ChunkedWorld` (chunks de 16x16, mundo de teste 8x8, geração determinística por seed, 4 regiões), carregamento raio 1 e descarregamento raio 2; colisão funciona com mapa fixo e com chunks.
 - Cliente: `GameScene` desenha um Graphics por chunk e o destrói ao descarregar; HUD com chunk atual; novo minimapa (`Minimap.ts`).
