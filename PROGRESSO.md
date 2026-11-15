@@ -4,7 +4,9 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 5 (Autoridade e segurança) - código escrito; lógica de `shared` testada em Node (11 testes novos); servidor, atacante e cliente AINDA NÃO rodados**
+Etapa atual: **Etapa 6 (Personagem e sobrevivência) - código escrito; lógica de `shared` testada em Node (31 testes novos, 69 no total); servidor, atacante, survivor e cliente AINDA NÃO rodados**
+(Decisões do usuário em 2026-11-14: itens da morte viram loot no local, baús futuros também saqueáveis por outros jogadores; kit inicial ao reaparecer aprovado. Loot entra na Etapa 7.)
+(Etapa 5: usuário pediu "Etapa 6" ao enviar o repositório; o resultado do workflow da Etapa 5 não foi informado, então ela segue como "escrita" até o passo "Teste de segurança" ser visto verde.)
 (Etapa 4: usuário informou que o workflow passou, incluindo os 2 bots; teste em 2 aparelhos reais não foi feito, usuário optou por pular.)
 (Etapa 3: usuário relatou 10-20 FPS no celular; correção por textura enviada, resultado não informado.)
 
@@ -33,7 +35,7 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 3 | Mapa em chunks | Escrita; falta typecheck/build do cliente e conferir no celular |
 | 4 | Servidor multiplayer (2 jogadores) | Concluída no workflow (2 bots + reconexão); 2 aparelhos reais não testados |
 | 5 | Autoridade e segurança | Escrita; falta o workflow rodar o atacante |
-| 6 | Personagem e sobrevivência | Pendente |
+| 6 | Personagem e sobrevivência | Escrita; falta o workflow rodar `survivor` e o atacante atualizado |
 | 7 | Coleta e loot | Pendente |
 | 8 | Zumbis e animais | Pendente |
 | 9 | Combate e PvP | Pendente |
@@ -91,6 +93,34 @@ Apagados: nenhum.
 - Verificado (Node 22, tsc, shim do vitest): 22 testes de `shared` passaram (8 novos + 12 de movimento + 2). Geração de 64 chunks em ~8 ms (~0,13 ms/chunk) neste ambiente. Caminhada simulada atravessou 5 chunks, no máximo 12 residentes, 18 gerados, 6 descartados, posição sempre finita e fora de sólidos.
 - NÃO verificado: typecheck e build do cliente (Phaser/Vite) com `GameScene.ts` e `Minimap.ts`; desenho dos chunks, minimapa e desempenho no celular/A04; vitest real (o workflow confirma).
 - Ainda não existe: mundo maior que 8x8 (ampliar só depois de medir no A04), persistência de alterações em chunks, sincronização de chunks no servidor (Etapa 4/5).
+
+## O que já foi feito (Etapa 6)
+- `shared/items.ts`: 4 itens (comida enlatada, garrafa de água, bandagem, barra de energia) com nome, categoria, peso, pilha máxima e efeito; só o servidor aplica efeitos.
+- `shared/inventory.ts`: 12 slots (grade 4x3), `add` (completa pilhas), `removeFromSlot` (valida slot e quantidade), `snapshot` (cópia que vai para a rede), kit inicial (2 água, 2 comida, 1 bandagem).
+- `shared/survival.ts`: `SurvivalSim` com vida, fome, sede e energia (0-100). Fome cai a ~30 min, sede ~20 min; andar gasta energia, parado recupera; fome/sede críticas (<20) reduzem a recuperação de energia; energia <20 reduz a velocidade (mínimo 60%); com fome ou sede ZERADA há 30 s de tolerância e depois 1 de dano/s por medidor zerado; vida regenera só com fome e sede >=50. Valores iniciais para testar, não são balanceamento final.
+- `shared/life.ts`: `PlayerLife` = tudo de um jogador no servidor (medidores + inventário + morte). `useItem` (morto? actionId novo? cooldown 500 ms? slot existe? efeito real? só então gasta 1), `die` (perde TODO o inventário), `respawn` (só morto, só após 5 s, volta com medidores e kit iniciais). `actionId` estritamente crescente: repetir um id nunca repete a ação (idempotência, Documento Mestre 8.3).
+- `shared/security.ts`: `inspectUseItem` e `inspectRespawn` (só `{slot, actionId}` / `{actionId}`; campo extra = manipulação, peso 5).
+- `shared/protocol.ts`: PROTOCOL_VERSION 2; `PlayerSnap.dead`; mensagens `PLAYER_STATE`, `INVENTORY_UPDATE` (servidor -> dono), `REQUEST_USE_ITEM`, `REQUEST_RESPAWN` (cliente -> servidor).
+- `shared/playersim.ts`: `speedMul` (definido só pelo servidor) e `teleport` (só reaparecimento).
+- `WorldRoom`: cada jogador tem `PlayerLife`; tempo de sobrevivência avança no tick; morto não anda; PLAYER_STATE/INVENTORY_UPDATE enviados quando mudam e a cada 1 s/2 s (cobre entrada e reconexão); durante a janela de reconexão (15 s) o tempo de sobrevivência fica CONGELADO (não punir quem perdeu a rede). `SURVIVAL_SCALE` (env, 1-1000, só para teste) acelera o tempo de sobrevivência.
+- Cliente: `ui/SurvivalUi.ts` (4 barras, avisos, grade de inventário que usa o item ao tocar ou tecla 1-9, tela "VOCÊ MORREU" com itens perdidos e botão REAPARECER com contagem). Só aparece no modo ONLINE. Cliente só mostra o que o servidor mandou e envia intenções.
+- `server/src/survivor.ts`: cliente real que, contra um servidor com tempo x100, confere: estado inicial, queda de fome/sede, beber (1 item e sede sobe), replay de actionId, item sem efeito, morte por fome/sede, inventário zerado, morto não anda nem usa item, reaparecer cedo recusado, reaparecer vivo com kit, reaparecer de novo não duplica.
+- `attacker.ts` ganhou: cliente tentando impor PLAYER_STATE/INVENTORY_UPDATE, usar item com campos extras, slot/actionId inválidos, reaparecer vivo, rajada de usos (cooldown) e replay de actionId.
+- Workflow: novo passo "Teste de sobrevivência" (2º servidor na porta 2568 com `SURVIVAL_SCALE=100`).
+
+## Verificado e não verificado (Etapa 6)
+- Verificado (Node 22 + tsc + shim do vitest): typecheck de `shared`; 69 testes passaram (31 novos: medidores, tolerância, dano, inventário, cooldown, replay, morte sem duplicação, 3.000 ações hostis, validação, velocidade com `speedMul`). Typecheck de `WorldRoom`, `attacker`, `survivor`, `bot`, `NetClient` e `SurvivalUi` contra stubs simplificados de colyseus/colyseus.js (confere só o uso dos tipos do `shared`).
+- NÃO verificado: `pnpm install`/typecheck real de servidor e cliente (Phaser/Colyseus não instalados aqui); servidor, atacante e survivor rodando; aparência do HUD/inventário/tela de morte no celular; o botão do inventário (46 px) no A04; se o `onMessage` de tipos específicos tem prioridade sobre o `"*"` no Colyseus 0.15 (suposição).
+- Limitações conhecidas: sem persistência (sair/reconectar após 15 s zera tudo); morrer PERDE o inventário e ele NÃO vira mochila no chão (isso entra na Etapa 7 com os itens no mundo; ver DECISOES_TECNICAS); sem como GANHAR itens além do kit inicial até a Etapa 7 (coleta); só dano de fome/sede (zumbis/PvP nas Etapas 8-9); sem ciclo de dia/noite; sem correr; sem mover itens entre slots (`REQUEST_INVENTORY_MOVE` ainda é "ação não implementada"); sem limite de peso.
+
+## Critério de aceite da Etapa 6
+Estado é atualizado e validado pelo servidor. Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de segurança" (atacante atualizado) e "Teste de sobrevivência" (todos OK) e (2) o usuário abrir o jogo ONLINE num servidor público, ver as barras caindo, usar um item pelo inventário, morrer e reaparecer.
+
+## Arquivos desta etapa (Etapa 6) - vão no `WORLD-ZERO-etapa6.zip`
+Novos: `packages/shared/src/{items,inventory,survival,life}.ts`, `packages/shared/src/survival.test.ts`, `apps/server/src/survivor.ts`, `apps/web/src/ui/SurvivalUi.ts`
+Alterados: `packages/shared/src/{index,protocol,playersim,security}.ts`, `packages/shared/src/network.test.ts`, `apps/server/src/{index,config,attacker}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/server/package.json`, `apps/web/src/net/NetClient.ts`, `apps/web/src/game/GameScene.ts`, `PROGRESSO.md`, `CHANGELOG.md`, `README.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (novo passo "Teste de sobrevivência").
+Apagados: nenhum.
 
 ## O que já foi feito (Etapa 5)
 - `shared/security.ts`: `PlayerGuard` (limite de 60 msg/s com rajada de 100; pontuação de violações que decai; expulsa com 100 pontos, código 4003) e `inspectInput` (só aceita exatamente `{seq, ix, iy}` dentro de -1..1; campos extras como x/y/speed/damage = manipulação).
@@ -166,7 +196,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 5 entregue em `WORLD-ZERO-etapa5.zip` (só os arquivos alterados) + `verificar.yml` novo que o usuário cola à mão. Depois de aprovada: Etapa 6 (personagem e sobrevivência).
+3. Etapa 6 entregue em `WORLD-ZERO-etapa6.zip` + `verificar.yml` novo. Se o workflow falhar, o usuário cola o erro do log no chat. Depois de aprovada: Etapa 7 (coleta e loot; inclui a mochila de morte, usando `PlayerLife.lost`).
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.

@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Não lançado]
+### Etapa 6 - Personagem e sobrevivência (2026-11-14)
+- Shared: itens (4), inventário de 12 slots, `SurvivalSim` (vida, fome, sede, energia, tolerância, penalidade de velocidade), `PlayerLife` (usar item com cooldown e `actionId` idempotente, morte que zera o inventário, reaparecimento); validação estrita `inspectUseItem`/`inspectRespawn`; protocolo 2 (`PLAYER_STATE`, `INVENTORY_UPDATE`, `REQUEST_USE_ITEM`, `REQUEST_RESPAWN`, `PlayerSnap.dead`); 31 testes novos (69 no total).
+- Servidor: estado de sobrevivência e inventário por jogador, morto não anda, tempo congelado durante a reconexão, `SURVIVAL_SCALE` para testes.
+- Cliente: barras, inventário tocável (teclas 1-9), tela de morte com botão REAPARECER (só no modo online).
+- Testes de rede: `survivor.ts` (novo) e ataques novos em `attacker.ts`; passo novo no workflow.
+- Ainda não rodado: servidor, atacante, survivor e cliente (ver PROGRESSO.md).
+
 ### Etapa 5 - Autoridade e segurança (2026-11-15)
 - Shared: `PlayerGuard` (limite de frequência e expulsão), `inspectInput` (validação estrita), `PlayerSim` (simulação autoritativa com checagem de velocidade e colisão); 11 testes.
 - Servidor: todas as mensagens passam por limite -> validação -> simulação; recusa tipos desconhecidos e ações não implementadas; `ACTION_REJECTED`; log `[seguranca]`; expulsão; `maxPayload` 2 KB.
