@@ -1,5 +1,8 @@
 # Changelog
 
+## Etapa 8 - Zumbis e animais
+- Zumbis (perseguem/atacam) e cervos (fogem), simulação por proximidade, ataque corpo a corpo básico, loot, protocolo 4.
+
 ## Etapa 7 - Coleta e loot
 - Madeira, pedra e sucata coletáveis; mochila de morte; `REQUEST_INTERACT`; `ENTITY_UPDATE`; protocolo 3; botão COLETAR.
 - Persistência de personagem: chave no aparelho, salvamento em Supabase ou arquivos, bloqueio de sessão duplicada.

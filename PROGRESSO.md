@@ -225,3 +225,12 @@ Ver `docs/DECISOES_TECNICAS.md`.
 - Verificado: 4 testes novos em `persist.test.ts` (ida e volta, morto, dados adulterados, validação da chave).
 - NÃO verificado: `FileStore`/`SupabaseStore` rodando de verdade, a tabela do Supabase, reinício do servidor com personagem restaurado, `onDispose` no SIGTERM do Render, localStorage no celular.
 - Fora do salvamento: mochilas de morte e recursos esgotados (voltam ao normal no reinício).
+
+## Etapa 8 - Zumbis e animais (escrita, 2026-11-15)
+- `packages/shared/src/mobs.ts` (`MobWorld`): 30 zumbis (percebem a 220 px, perseguem a 80 px/s, atacam a 26 px: 8 de dano por 1 s, perdem o interesse a 380 px e voltam para casa) e 16 cervos (fogem a 120 px/s quando alguém chega a 150 px). Posições iniciais determinísticas, em chão livre, a 12+ tiles do spawn. Renascem em 60 s (não com jogador a < 300 px).
+- Proximidade: só simula criatura com jogador vivo e conectado a até 640 px; as outras ficam congeladas e não vão para a rede. Cada criatura existe uma única vez, no servidor.
+- Combate mínimo: `REQUEST_ATTACK {actionId}`; o servidor escolhe a criatura viva mais próxima (48 px), punho = 10 de dano, recarga 700 ms (`PlayerLife.startAttack`). Morreu: loot vira mochila no chão (zumbi: sucata/bandagem; cervo: carne crua, novo item `raw_meat`). Dano de zumbi usa `survival.damage` (morte e mochila da Etapa 6/7).
+- Protocolo 4: `WorldSnapshot.mobs`. Cliente: bolinhas vermelhas (zumbi) e marrons (cervo), botão ATACAR.
+- Verificado: 9 testes novos em `mobs.test.ts` (populate, perseguição e recarga, 2 jogadores sem golpe duplicado, congelamento, perder interesse, fuga, morte única com loot, renascimento, startAttack).
+- NÃO verificado: servidor e cliente rodando; custo de CPU no Render gratuito; bots do workflow (podem esbarrar em zumbis longe do spawn); aparência/toque dos botões.
+- Limitações: IA sem pathfinding (zumbi trava atrás de parede); sem armas (Etapa 9); animais não atacam; sem ruído/visão; mobs não são salvos.
