@@ -89,6 +89,16 @@ jobs:
           cd apps/server
           SERVER_WS=ws://localhost:2568 pnpm exec tsx src/survivor.ts 2>&1 | tee ../../sobrevivencia.log
 
+      - name: Teste de combate PvP (2 clientes, servidor novo, relogio real ~40 s)
+        id: pvp
+        run: |
+          set -o pipefail
+          PORT=2569 pnpm --filter @worldzero/server start > server-pvp.log 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://localhost:2569/health && break; sleep 1; done
+          curl -sf http://localhost:2569/health
+          cd apps/server
+          SERVER_WS=ws://localhost:2569 pnpm exec tsx src/duel.ts 2>&1 | tee ../../pvp.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -110,6 +120,7 @@ jobs:
             echo "- Multiplayer (2 clientes + reconexao): ${{ steps.multiplayer.outcome }}"
             echo "- Seguranca (cliente malicioso): ${{ steps.seguranca.outcome }}"
             echo "- Sobrevivencia (fome, sede, itens, morte, reaparecer): ${{ steps.sobrevivencia.outcome }}"
+            echo "- Combate PvP (dano, recarga, alcance, morte, protecao): ${{ steps.pvp.outcome }}"
             echo ""
             echo "### Logs dos bots"
             echo '```'
@@ -124,6 +135,11 @@ jobs:
             echo "### Teste de sobrevivencia (esperado: todos OK)"
             echo '```'
             cat sobrevivencia.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de combate PvP (esperado: todos OK)"
+            echo '```'
+            cat pvp.log 2>/dev/null || echo "(sem log)"
             echo '```'
             echo ""
             echo "### Log do servidor"
