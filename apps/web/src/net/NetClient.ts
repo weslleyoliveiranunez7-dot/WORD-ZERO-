@@ -12,6 +12,21 @@ import {
   type WorldSnapshot,
 } from "@worldzero/shared";
 
+// Chave secreta do personagem: gerada UMA vez neste aparelho. Quem tem a chave controla o personagem.
+// Se o armazenamento do navegador for limpo, o personagem salvo nao pode mais ser recuperado.
+function playerKey(): string {
+  try {
+    let k = localStorage.getItem("wz_key");
+    if (!k || !/^[A-Za-z0-9_-]{16,64}$/.test(k)) {
+      k = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "").slice(0, 48);
+      localStorage.setItem("wz_key", k);
+    }
+    return k;
+  } catch {
+    return ""; // sem armazenamento: joga sem salvar
+  }
+}
+
 export type NetStatus = "conectando" | "online" | "reconectando" | "desconectado";
 
 // Conexao com a sala do servidor. Reconecta sozinho (ate RECONNECT_WINDOW_SECONDS) se a rede cair.
@@ -35,7 +50,8 @@ export class NetClient {
 
   async connect(): Promise<void> {
     try {
-      const opts: JoinOptions = { protocol: PROTOCOL_VERSION };
+      const key = playerKey();
+      const opts: JoinOptions = key ? { protocol: PROTOCOL_VERSION, key } : { protocol: PROTOCOL_VERSION };
       this.attach(await this.client.joinOrCreate(WORLD_ROOM_NAME, opts));
     } catch (e) {
       this.status = "desconectado";
@@ -59,6 +75,11 @@ export class NetClient {
       if (code === KICK_CODE) {
         this.status = "desconectado";
         this.lastError = "expulso pelo servidor";
+        return;
+      }
+      if (code === 4002) {
+        this.status = "desconectado";
+        this.lastError = "personagem ja conectado em outra aba/aparelho";
         return;
       }
       void this.tryReconnect();
