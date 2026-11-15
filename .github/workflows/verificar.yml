@@ -79,6 +79,16 @@ jobs:
           cd apps/server
           SERVER_WS=ws://localhost:2567 pnpm exec tsx src/attacker.ts 2>&1 | tee ../../atacante.log
 
+      - name: Teste de sobrevivencia (servidor com tempo acelerado x100)
+        id: sobrevivencia
+        run: |
+          set -o pipefail
+          PORT=2568 SURVIVAL_SCALE=100 pnpm --filter @worldzero/server start > server-surv.log 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://localhost:2568/health && break; sleep 1; done
+          curl -sf http://localhost:2568/health
+          cd apps/server
+          SERVER_WS=ws://localhost:2568 pnpm exec tsx src/survivor.ts 2>&1 | tee ../../sobrevivencia.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -99,6 +109,7 @@ jobs:
             echo "- Servidor liga e responde /health: ${{ steps.servidor.outcome }}"
             echo "- Multiplayer (2 clientes + reconexao): ${{ steps.multiplayer.outcome }}"
             echo "- Seguranca (cliente malicioso): ${{ steps.seguranca.outcome }}"
+            echo "- Sobrevivencia (fome, sede, itens, morte, reaparecer): ${{ steps.sobrevivencia.outcome }}"
             echo ""
             echo "### Logs dos bots"
             echo '```'
@@ -108,6 +119,11 @@ jobs:
             echo "### Ataques de teste (esperado: todos OK)"
             echo '```'
             cat atacante.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de sobrevivencia (esperado: todos OK)"
+            echo '```'
+            cat sobrevivencia.log 2>/dev/null || echo "(sem log)"
             echo '```'
             echo ""
             echo "### Log do servidor"
