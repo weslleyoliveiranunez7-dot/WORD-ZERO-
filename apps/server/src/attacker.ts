@@ -120,6 +120,23 @@ async function main(): Promise<void> {
   await sleep(1100);
   check("reaparecer estando vivo recusado", reasons.includes("vivo") && !state!.dead, `motivos: ${[...new Set(reasons)].join(",")}`);
 
+  // Etapa 9: golpes forjados (alvo, dano, arma, alcance, posicao) sao manipulacao; rajada de golpes respeita a recarga
+  reasons.length = 0;
+  room.send("REQUEST_ATTACK", { actionId: ++aid, victim: "qualquer-um", damage: 9999, weapon: "club", reach: 9999 });
+  room.send("REQUEST_ATTACK", { actionId: ++aid, x: 1, y: 1 });
+  await sleep(1100);
+  check("golpe com alvo/dano/arma/alcance forjados recusado", reasons.includes("campos_extras") && state!.health <= 100, `motivos: ${[...new Set(reasons)].join(",")}`);
+  reasons.length = 0;
+  for (const bad of [{ actionId: -1 }, { actionId: 1.5 }, { actionId: "7" }, { actionId: NaN }, {}]) room.send("REQUEST_ATTACK", bad);
+  await sleep(1100);
+  check("golpe com actionId invalido recusado", reasons.includes("valores_invalidos") || reasons.includes("campos_extras"), `motivos: ${[...new Set(reasons)].join(",")}`);
+  await sleep(3000); // deixa a pontuacao de violacoes decair
+  reasons.length = 0;
+  for (let i = 0; i < 15; i++) room.send("REQUEST_ATTACK", { actionId: ++aid });
+  await sleep(1200);
+  check("rajada de 15 golpes: so 1 passa, o resto cai na recarga", reasons.includes("em_recarga"), `motivos: ${[...new Set(reasons)].join(",")}`);
+  await sleep(3000);
+
   // rajada de 15 usos do slot 0: so 1 pode ser consumido (cooldown no servidor)
   const slot0 = inv!.slots[0];
   const before0 = slot0 ? slot0.qty : 0;
