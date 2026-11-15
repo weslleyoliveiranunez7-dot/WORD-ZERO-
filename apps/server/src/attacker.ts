@@ -137,6 +137,23 @@ async function main(): Promise<void> {
   check("rajada de 15 golpes: so 1 passa, o resto cai na recarga", reasons.includes("em_recarga"), `motivos: ${[...new Set(reasons)].join(",")}`);
   await sleep(3000);
 
+  // Etapa 10: fabricar com campos forjados / receita inventada / actionId invalido e recusado; sem ingredientes nada nasce
+  reasons.length = 0;
+  room.send("REQUEST_CRAFT", { recipe: "spear", actionId: ++aid, qty: 99, output: "spear" });
+  room.send("REQUEST_CRAFT", { recipe: "ouro", actionId: ++aid });
+  room.send("REQUEST_CRAFT", { recipe: "__proto__", actionId: ++aid });
+  await sleep(1100);
+  check("fabricar com campos extras / receita inventada recusado", reasons.includes("campos_extras") || reasons.includes("valores_invalidos"), `motivos: ${[...new Set(reasons)].join(",")}`);
+  reasons.length = 0;
+  for (const bad of [{ recipe: "club", actionId: -1 }, { recipe: "club", actionId: 1.5 }, { recipe: "club", actionId: "7" }, { recipe: "club" }, {}]) room.send("REQUEST_CRAFT", bad);
+  await sleep(1100);
+  check("fabricar com actionId invalido recusado", reasons.includes("valores_invalidos") || reasons.includes("campos_extras"), `motivos: ${[...new Set(reasons)].join(",")}`);
+  await sleep(3000); // deixa a pontuacao de violacoes decair
+  reasons.length = 0;
+  room.send("REQUEST_CRAFT", { recipe: "club", actionId: ++aid }); // kit inicial nao tem madeira
+  await sleep(1100);
+  check("fabricar sem ingredientes recusado e nada aparece no inventario", reasons.includes("faltam_ingredientes") && !inv?.slots.some((x) => x && x.id === "club"), `motivos: ${[...new Set(reasons)].join(",")}`);
+
   // rajada de 15 usos do slot 0: so 1 pode ser consumido (cooldown no servidor)
   const slot0 = inv!.slots[0];
   const before0 = slot0 ? slot0.qty : 0;
