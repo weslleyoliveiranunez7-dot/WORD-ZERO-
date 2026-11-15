@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Não lançado]
+### Etapa 5 - Autoridade e segurança (2026-11-15)
+- Shared: `PlayerGuard` (limite de frequência e expulsão), `inspectInput` (validação estrita), `PlayerSim` (simulação autoritativa com checagem de velocidade e colisão); 11 testes.
+- Servidor: todas as mensagens passam por limite -> validação -> simulação; recusa tipos desconhecidos e ações não implementadas; `ACTION_REJECTED`; log `[seguranca]`; expulsão; `maxPayload` 2 KB.
+- Cliente: envio limitado a ~30 msg/s; não reconecta após expulsão.
+- Atacante de teste (`attacker.ts`) e passo de segurança no workflow.
+- Ainda não rodado: servidor/atacante/cliente (ver PROGRESSO.md).
+
 ### Etapa 4 - Servidor multiplayer (2026-11-15)
 - Servidor simula o movimento (mesma função do cliente) a 20 Hz e envia `WORLD_SNAPSHOT`; recebe só `PLAYER_INPUT` validado; limite `MAX_PLAYERS`; reconexão por 15 s; recusa protocolo incompatível.
 - Cliente: botão JOGAR ONLINE, jogadores remotos interpolados, reconexão automática, `?server=` para apontar o servidor.

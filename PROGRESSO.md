@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 4 (Servidor multiplayer) - código escrito; lógica de `shared` testada em Node; servidor, bots e cliente AINDA NÃO rodados**
+Etapa atual: **Etapa 5 (Autoridade e segurança) - código escrito; lógica de `shared` testada em Node (11 testes novos); servidor, atacante e cliente AINDA NÃO rodados**
+(Etapa 4: usuário informou que o workflow passou, incluindo os 2 bots; teste em 2 aparelhos reais não foi feito, usuário optou por pular.)
 (Etapa 3: usuário relatou 10-20 FPS no celular; correção por textura enviada, resultado não informado.)
 
 ## Regras que valem sempre (resumo do Documento Mestre)
@@ -30,8 +31,8 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 1 | Fundação (monorepo, Vite, Phaser, Colyseus, CI) | Concluída (workflow Verificar passou) |
 | 2 | Primeiro mapa 2D (personagem, câmera, colisão, teclado, joystick) | Escrita; falta conferir visualmente no celular |
 | 3 | Mapa em chunks | Escrita; falta typecheck/build do cliente e conferir no celular |
-| 4 | Servidor multiplayer (2 jogadores) | Escrita; falta o workflow provar 2 clientes e teste real em 2 aparelhos |
-| 5 | Autoridade e segurança | Pendente |
+| 4 | Servidor multiplayer (2 jogadores) | Concluída no workflow (2 bots + reconexão); 2 aparelhos reais não testados |
+| 5 | Autoridade e segurança | Escrita; falta o workflow rodar o atacante |
 | 6 | Personagem e sobrevivência | Pendente |
 | 7 | Coleta e loot | Pendente |
 | 8 | Zumbis e animais | Pendente |
@@ -90,6 +91,21 @@ Apagados: nenhum.
 - Verificado (Node 22, tsc, shim do vitest): 22 testes de `shared` passaram (8 novos + 12 de movimento + 2). Geração de 64 chunks em ~8 ms (~0,13 ms/chunk) neste ambiente. Caminhada simulada atravessou 5 chunks, no máximo 12 residentes, 18 gerados, 6 descartados, posição sempre finita e fora de sólidos.
 - NÃO verificado: typecheck e build do cliente (Phaser/Vite) com `GameScene.ts` e `Minimap.ts`; desenho dos chunks, minimapa e desempenho no celular/A04; vitest real (o workflow confirma).
 - Ainda não existe: mundo maior que 8x8 (ampliar só depois de medir no A04), persistência de alterações em chunks, sincronização de chunks no servidor (Etapa 4/5).
+
+## O que já foi feito (Etapa 5)
+- `shared/security.ts`: `PlayerGuard` (limite de 60 msg/s com rajada de 100; pontuação de violações que decai; expulsa com 100 pontos, código 4003) e `inspectInput` (só aceita exatamente `{seq, ix, iy}` dentro de -1..1; campos extras como x/y/speed/damage = manipulação).
+- `shared/playersim.ts`: `PlayerSim` = estado autoritativo do jogador; ignora input velho (replay), NaN/Infinity viram "parado", passo limitado, verifica velocidade máxima, colisão e valores finitos após cada passo (se falhar, volta à posição anterior e loga BUG).
+- `WorldRoom`: toda mensagem passa por limite de frequência -> validação estrita -> simulação; `onMessage("*")` recusa tipos desconhecidos e ações ainda não implementadas (`REQUEST_*`); `ACTION_REJECTED` ao cliente (máx. 1/s); logs `[seguranca]` com no máximo 1 linha/s por jogador e motivo; expulsão por comportamento suspeito. `maxPayload` 2 KB no WebSocket.
+- Cliente: manda no máximo ~30 msg/s; `NetClient` não tenta reconectar quando é expulso (4003).
+- `server/src/attacker.ts`: cliente malicioso real que tenta impor posição, velocidade/NaN, mensagens inventadas, `TELEPORT`, `REQUEST_ATTACK`, flood e payload gigante; cada ataque deve falhar. Passo "Teste de segurança" no workflow.
+
+## Verificado e não verificado (Etapa 5)
+- Verificado (Node + tsc): typecheck de `shared`; 11 testes novos (limite de frequência, expulsão, entradas hostis, 20.000 passos hostis sem sair do mapa, sem passar da velocidade e sem "correção").
+- NÃO verificado: servidor/atacante/cliente rodando; `onMessage("*")`, `maxPayload` e código de saída 4003 do Colyseus 0.15 são suposições a confirmar no workflow.
+- Ainda pendente do Documento Mestre 8.3, por não existirem as ações: validação de alcance, cooldowns, inventário, IDs de ação idempotentes e proteção contra duplicação (entram com as Etapas 6 a 10). Autenticação/contas (8.4) e logs persistentes (`audit_logs`, Etapa 12) também ficam para depois. O atacante ainda vem de um cliente "bem-comportado" no mesmo IP: sem limite por IP/conexões simultâneas.
+
+## Critério de aceite da Etapa 5
+Cliente não consegue impor posição ou ação inválida. Só marcar como concluída quando o passo "Teste de segurança" do workflow mostrar todos os ataques como OK (e os testes e o multiplayer continuarem passando).
 
 ## O que já foi feito (Etapa 4)
 - `shared/protocol.ts`: tipos `PlayerInputMsg`, `PlayerSnap`, `WorldSnapshot`, `JoinOptions`, validação `parseInput`/`parseJoinOptions`, constantes (20 Hz, 100 ms de interpolação, 15 s de reconexão). Sem Colyseus Schema: mensagens JSON (`PLAYER_INPUT` cliente->servidor, `WORLD_SNAPSHOT` servidor->todos).
@@ -150,7 +166,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 4 entregue em `WORLD-ZERO-etapa4.zip` (só os arquivos alterados, inclui `verificar.yml` novo que o usuário cola à mão). Depois de aprovada: Etapa 5 (autoridade e segurança).
+3. Etapa 5 entregue em `WORLD-ZERO-etapa5.zip` (só os arquivos alterados) + `verificar.yml` novo que o usuário cola à mão. Depois de aprovada: Etapa 6 (personagem e sobrevivência).
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.
