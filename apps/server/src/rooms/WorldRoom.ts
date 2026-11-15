@@ -184,13 +184,13 @@ export class WorldRoom extends Room {
         const base = { owner: p.keyId, tx: m.tx, ty: m.ty, px: p.sim.x, py: p.sim.y };
         const occupants = [...this.players.values()].map((q) => ({ x: q.sim.x, y: q.sim.y }));
         if (m.op === "place") res = this.structures.place({ ...base, kind: m.piece, inv: p.life.inventory, terrain: this.world, occupants });
+        else if (m.op === "deposit" || m.op === "withdraw") res = this.structures.move({ ...base, inv: p.life.inventory, slot: m.slot, toChest: m.op === "deposit" });
         else if (m.op === "toggle") res = this.structures.toggle({ ...base, occupants });
-        else if (m.op === "repair") res = this.structures.repair({ ...base, inv: p.life.inventory });
-        else res = this.structures.move({ ...base, inv: p.life.inventory, slot: m.slot, toChest: m.op === "deposit" });
+        else res = this.structures.repair({ ...base, inv: p.life.inventory });
       }
       if (res.ok) {
         if (m.op !== "toggle" && m.op !== "trust") p.life.invVersion++; // recursos gastos / itens movidos
-        if (res.chest) this.sendChest(client, p, m.tx, m.ty);
+        if (res.chest && m.op !== "trust") this.sendChest(client, p, m.tx, m.ty);
       }
       this.finish(client, p, "REQUEST_BUILD", res);
     });
