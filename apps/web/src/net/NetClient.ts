@@ -116,6 +116,10 @@ export class NetClient {
     if (this.status === "online") this.room?.send("REQUEST_INTERACT", { actionId: ++this.actionId });
   }
 
+  attack(): void {
+    if (this.status === "online") this.room?.send("REQUEST_ATTACK", { actionId: ++this.actionId });
+  }
+
   respawn(): void {
     if (this.status === "online") this.room?.send("REQUEST_RESPAWN", { actionId: ++this.actionId });
   }
