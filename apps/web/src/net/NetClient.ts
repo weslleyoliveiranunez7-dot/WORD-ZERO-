@@ -1,5 +1,6 @@
 import { Client, Room } from "colyseus.js";
 import {
+  KICK_CODE,
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
   WORLD_ROOM_NAME,
@@ -42,8 +43,14 @@ export class NetClient {
     this.token = room.reconnectionToken;
     this.status = "online";
     room.onMessage("WORLD_SNAPSHOT", (s: WorldSnapshot) => this.onSnapshot(s));
-    room.onLeave(() => {
-      if (!this.closed) void this.tryReconnect();
+    room.onLeave((code) => {
+      if (this.closed) return;
+      if (code === KICK_CODE) {
+        this.status = "desconectado";
+        this.lastError = "expulso pelo servidor";
+        return;
+      }
+      void this.tryReconnect();
     });
     room.onError((_code, message) => {
       this.lastError = message ?? "erro";
