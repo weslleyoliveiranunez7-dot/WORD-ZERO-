@@ -3,6 +3,7 @@ import {
   CLIENT_MESSAGES,
   ChunkedWorld,
   KICK_CODE,
+  LootWorld,
   MAX_REJECT_NOTICES_PER_SECOND,
   PROTOCOL_VERSION,
   PlayerGuard,
@@ -11,11 +12,13 @@ import {
   RECONNECT_WINDOW_SECONDS,
   SERVER_TICK_RATE,
   inspectInput,
+  inspectInteract,
   inspectRespawn,
   inspectUseItem,
   parseJoinOptions,
   type ActionRejectedMsg,
   type ActionResult,
+  type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type PlayerSnap,
   type PlayerStateMsg,
@@ -24,6 +27,7 @@ import {
 
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
 const INVENTORY_HEARTBEAT_MS = 2000;
+const LOOT_HEARTBEAT_MS = 2000;
 
 interface PlayerEntry {
   sim: PlayerSim;
@@ -36,6 +40,8 @@ interface PlayerEntry {
   lastStateSent: number;
   lastInvVersion: number;
   lastInvSent: number;
+  lastLootVersion: number;
+  lastLootSent: number;
 }
 
 // Etapa 6: alem do movimento, o servidor mantem vida/fome/sede/energia/inventario de cada jogador.
@@ -43,6 +49,7 @@ interface PlayerEntry {
 // Toda mensagem passa por: limite de frequencia -> validacao estrita -> regra de jogo no servidor.
 export class WorldRoom extends Room {
   private world = new ChunkedWorld(); // mundo de teste 8x8: no maximo 64 chunks em memoria
+  private loot = new LootWorld(); // Etapa 7: recursos esgotados e mochilas no chao (so o servidor decide)
   private players = new Map<string, PlayerEntry>();
   private tick = 0;
   private survivalScale = 1;
@@ -66,6 +73,15 @@ export class WorldRoom extends Room {
       const r = inspectUseItem(raw, p.life.inventory.size);
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
       this.finish(client, p, "REQUEST_USE_ITEM", p.life.useItem(r.msg.slot, r.msg.actionId, Date.now()));
+    });
+
+    // Etapa 7: coletar recurso / pegar mochila. O alvo e a posicao saem do SERVIDOR, nunca da mensagem.
+    this.onMessage("REQUEST_INTERACT", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectInteract(raw);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      this.finish(client, p, "REQUEST_INTERACT", p.life.interact(r.msg.actionId, Date.now(), this.world, this.loot, p.sim.x, p.sim.y));
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
@@ -111,6 +127,8 @@ export class WorldRoom extends Room {
       lastStateSent: 0,
       lastInvVersion: -1,
       lastInvSent: 0,
+      lastLootVersion: -1,
+      lastLootSent: 0,
     });
     console.log(`[WorldRoom] entrou: ${client.sessionId} (${this.players.size}/${this.maxClients})`);
   }
@@ -126,6 +144,7 @@ export class WorldRoom extends Room {
           p.connected = true;
           p.lastStateSent = 0; // reenvia o estado completo ao reconectar
           p.lastInvSent = 0;
+          p.lastLootSent = 0;
         }
         console.log(`[WorldRoom] reconectou: ${client.sessionId}`);
         return;
@@ -205,11 +224,18 @@ export class WorldRoom extends Room {
       const inv: InventoryUpdateMsg = { slots: p.life.inventory.snapshot() };
       client.send("INVENTORY_UPDATE", inv);
     }
+    if (force || this.loot.version !== p.lastLootVersion || now - p.lastLootSent >= LOOT_HEARTBEAT_MS) {
+      p.lastLootVersion = this.loot.version;
+      p.lastLootSent = now;
+      const ent: EntityUpdateMsg = this.loot.view(this.world);
+      client.send("ENTITY_UPDATE", ent);
+    }
   }
 
   private update(dtMs: number): void {
     const dt = dtMs / 1000;
     const now = Date.now();
+    this.loot.tick(now);
     const snaps: PlayerSnap[] = [];
     for (const [id, p] of this.players) {
       if (p.life.dead) p.sim.stop();
@@ -221,6 +247,7 @@ export class WorldRoom extends Room {
         const moving = Math.hypot(p.sim.x - x0, p.sim.y - y0) > 0.01;
         if (p.connected && p.life.tick(dt * this.survivalScale, moving, now)) {
           p.sim.stop();
+          this.loot.addDrop(p.sim.x, p.sim.y, p.life.lost, now); // mochila no local da morte (outros podem pegar)
           console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens)`);
         }
       }
