@@ -2,7 +2,7 @@
 
 Jogo multiplayer de sobrevivência 2D top-down (Android + web). Especificação completa em `docs/DOCUMENTO_MESTRE.txt`.
 
-**Status:** Etapas 1 a 6 escritas (a 6 = sobrevivência e inventário, aguardando o workflow). Veja `PROGRESSO.md`.
+**Status:** Etapas 1 a 9 escritas (a 9 = combate e PvP, aguardando o workflow). Veja `PROGRESSO.md`.
 
 ## Requisitos
 - Node.js 20+ (testado só com a v22 de leitura; ver PROGRESSO.md)

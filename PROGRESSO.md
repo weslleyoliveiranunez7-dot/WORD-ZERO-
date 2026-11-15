@@ -3,9 +3,11 @@
 > Se quem estava implementando (Claude) ficar sem tokens, outra IA pode continuar lendo ESTE arquivo + `docs/DOCUMENTO_MESTRE.txt`.
 > Atualize este arquivo ao final de CADA etapa.
 
-Última atualização: 2026-11-14
-Etapa atual: **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `shared` passam (shim Node); servidor e cliente AINDA NÃO rodados. Persistência de inventário NÃO feita (ver abaixo).**
+Última atualização: 2026-11-15
+Etapa atual: **Etapa 9 (Combate e PvP) - código escrito; 27 testes novos de `shared` passam (shim Node, 117 no total) e a sala do servidor foi exercitada com um Colyseus de mentira (20 checagens); servidor REAL, `duel.ts` e cliente AINDA NÃO rodados.**
+(Etapa 7 anterior:) **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `shared` passam (shim Node); servidor e cliente AINDA NÃO rodados. Persistência de inventário NÃO feita (ver abaixo).**
 (Etapa 6 anterior:) **Etapa 6 (Personagem e sobrevivência) - código escrito; lógica de `shared` testada em Node (31 testes novos, 69 no total); servidor, atacante, survivor e cliente AINDA NÃO rodados**
+(Etapas 7 e 8: o usuário não informou o resultado do workflow antes de pedir a Etapa 9; seguem como "escritas".)
 (Decisões do usuário em 2026-11-14: itens da morte viram loot no local, baús futuros também saqueáveis por outros jogadores; kit inicial ao reaparecer aprovado. Loot entra na Etapa 7.)
 (Etapa 5: usuário pediu "Etapa 6" ao enviar o repositório; o resultado do workflow da Etapa 5 não foi informado, então ela segue como "escrita" até o passo "Teste de segurança" ser visto verde.)
 (Etapa 4: usuário informou que o workflow passou, incluindo os 2 bots; teste em 2 aparelhos reais não foi feito, usuário optou por pular.)
@@ -17,7 +19,7 @@ Etapa atual: **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `sha
 - Não afirmar que algo funciona sem rodar e registrar o teste real.
 - Sem segredos no código/APK/commits. Sem apagar arquitetura funcional sem aprovação.
 - GitHub Pages hospeda só o cliente web, nunca o servidor multiplayer.
-- Entregar projeto em pastas `parte-1`, `parte-2`... com menos de 100 arquivos cada (limite do upload do GitHub).
+- Entregar projeto INTEIRO em pastas `parte-1`, `parte-2`... com menos de 100 arquivos cada (limite do upload do GitHub). Entrega por etapa = só o zip de novos/alterados (regra abaixo).
 - Ao fim de cada etapa: resumo, arquivos novos/alterados, comandos, resultado real dos testes, problemas, próximo passo, este arquivo atualizado.
 
 ## Regra de entrega por etapa (importante)
@@ -37,9 +39,9 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 4 | Servidor multiplayer (2 jogadores) | Concluída no workflow (2 bots + reconexão); 2 aparelhos reais não testados |
 | 5 | Autoridade e segurança | Escrita; falta o workflow rodar o atacante |
 | 6 | Personagem e sobrevivência | Escrita; falta o workflow rodar `survivor` e o atacante atualizado |
-| 7 | Coleta e loot | Pendente |
-| 8 | Zumbis e animais | Pendente |
-| 9 | Combate e PvP | Pendente |
+| 7 | Coleta e loot (+ persistência de inventário) | Escrita; falta o workflow e testar em 2 aparelhos |
+| 8 | Zumbis e animais | Escrita; falta o workflow |
+| 9 | Combate e PvP | Escrita; falta o workflow rodar `duel` e testar no celular |
 | 10 | Crafting | Pendente |
 | 11 | Construção de base | Pendente |
 | 12 | Banco e persistência | Pendente |
@@ -197,7 +199,7 @@ Personagem anda, colide e a câmera acompanha. Só marcar como concluída depois
 ## Próximo passo
 1. Usuário atualiza o `verificar.yml`, sobe `WORLD-ZERO-etapa2.zip`, ativa o Pages e informa o resultado.
 2. Corrigir o que falhar; marcar a Etapa 2 como concluída.
-3. Etapa 6 entregue em `WORLD-ZERO-etapa6.zip` + `verificar.yml` novo. Se o workflow falhar, o usuário cola o erro do log no chat. Depois de aprovada: Etapa 7 (coleta e loot; inclui a mochila de morte, usando `PlayerLife.lost`).
+3. Etapa 9 entregue em `WORLD-ZERO-etapa9.zip` + `verificar.yml` novo (passo "Teste de combate PvP"). Se o workflow falhar, o usuário cola o erro do log no chat. Depois de aprovada: Etapa 10 (crafting; o porrete passa a poder ser fabricado e a troca de arma pode entrar junto).
 
 ## Decisões em aberto
 Ver `docs/DECISOES_TECNICAS.md`.
@@ -234,3 +236,32 @@ Ver `docs/DECISOES_TECNICAS.md`.
 - Verificado: 9 testes novos em `mobs.test.ts` (populate, perseguição e recarga, 2 jogadores sem golpe duplicado, congelamento, perder interesse, fuga, morte única com loot, renascimento, startAttack).
 - NÃO verificado: servidor e cliente rodando; custo de CPU no Render gratuito; bots do workflow (podem esbarrar em zumbis longe do spawn); aparência/toque dos botões.
 - Limitações: IA sem pathfinding (zumbi trava atrás de parede); sem armas (Etapa 9); animais não atacam; sem ruído/visão; mobs não são salvos.
+
+
+## Etapa 9 - Combate e PvP (escrita, 2026-11-15)
+- `packages/shared/src/combat.ts`: `performAttack` (único caminho de dano de jogador: atacante vivo -> `actionId` novo -> recarga da arma -> alvo com alcance e linha de visão -> vítima viva e sem proteção -> dano), `bestWeapon` (arma de maior dano do inventário; sem arma = punho), `chooseTarget` (mais próximo, jogador ou criatura; empate = criatura), `lineClear` (parede/árvore bloqueiam, água não), `killCredit` (último a causar dano em até 15 s).
+- `items.ts`: item `club` (porrete: 20 de dano, alcance 52 px, recarga 800 ms, 1 por slot) e `WeaponStats`. Zumbi larga porrete com 8% (`mobs.ts`). Punho: 10 / 48 px / 700 ms.
+- `life.ts`: `startAttack(actionId, now, cooldownMs)` usa a recarga da arma; `takeHit` (dano de jogador; ignora morto, vida já zerada no tick, protegido, valor inválido); proteção de 3 s só contra jogadores logo após reaparecer (`SPAWN_GRACE_MS`), encerrada se o protegido atacar; `lastHit` para o crédito.
+- `WorldRoom`: `REQUEST_ATTACK` só chama `performAttack` com as posições/inventários do servidor. Jogador desconectado (janela de 15 s) continua alvo e pode morrer (o tick com dt 0 registra a morte). Morte por jogador: mochila (já existia), `COMBAT_EVENT kill` com crédito, `persist`. `PLAYER_STATE.weapon` informa a arma usada.
+- Protocolo 5: `COMBAT_EVENT {kind: hit|miss|kill, attacker, victim?, mobId?, x, y, damage?}` (só feedback; nunca é "confirmação" de dano).
+- Cliente: números de dano, anel de golpe, flash vermelho ao ser atingido, vibração ao acertar, "Arma: ..." no HUD, ATACAR escurece na recarga (só visual), ícone do porrete.
+- Mudança de comportamento da Etapa 8: errar (sem alvo) agora gasta a recarga; golpes contra criatura também exigem linha de visão.
+- Testes: `combat.test.ts` (27): armas, salvar/carregar porrete (e save com 2 porretes é recusado), linha de visão, escolha de alvo, proteção, crédito, golpe completo (alcance, rajada de 50 = 1 dano, replay de id, morto/protegido/si mesmo, matar, desconectado, criatura, drop de porrete, 3.000 golpes hostis), formato do golpe forjado. `mobs.test.ts`: contagem de drops do zumbi agora vem da tabela (acrescentou o porrete).
+- `attacker.ts`: golpe com alvo/dano/arma/alcance/posição forjados, `actionId` inválido e rajada de 15 golpes (precisa cair em `em_recarga`).
+- `server/src/duel.ts` (NOVO, `pnpm --filter @worldzero/server duel`): 2 clientes reais contra um servidor NOVO (porta 2569, ~40 s). Confere: soco = 10 de dano; evento hit para os dois; rajada de 10 = 1 acerto; replay de `actionId`; golpe forjado; golpe fora do alcance (B se afasta) = `miss`; desconectar no meio da luta não evita o dano; matar com golpes válidos; crédito; itens perdidos; mochila no chão; morto não apanha nem ataca; reaparecer com proteção de 3 s; depois o PvP volta.
+- Workflow: novo passo "Teste de combate PvP" (porta 2569; servidor separado para não haver jogadores-fantasma do passo do atacante).
+
+## Verificado e não verificado (Etapa 9)
+- Verificado (Node 22 + shim do vitest + `tsc`): 117 testes de `shared` passam (27 novos); typecheck de `shared` sem erros; typecheck de `server` (inclui `duel.ts`, `attacker.ts`, `WorldRoom.ts`) e do cliente contra stubs de colyseus/colyseus.js/phaser (só confere o uso dos tipos do `shared`; as chamadas do Phaser em `GameScene.ts` NÃO foram checadas contra o Phaser de verdade).
+- Verificado (simulação): o `WorldRoom.ts` REAL rodando em Node contra um `colyseus` de mentira (script temporário, não está no repositório) com 3 clientes falsos e relógio controlado: 20 checagens OK (soco, estado enviado, evento, rajada, replay, golpe forjado, porrete, jogador desconectado morrendo, crédito, 1 mochila, morto não apanha, reaparecer com proteção, PvP volta, dois golpes no mesmo tick = 1 morte e 1 mochila, porrete mata zumbi).
+- NÃO verificado: `pnpm install`/typecheck/`pnpm test` reais (vitest de verdade); servidor Colyseus real; `duel.ts` rodando (depende de `room.connection.close()` + `client.reconnect` como no `bot.ts`, de o primeiro `PLAYER_STATE` chegar após reconectar e dos tempos reais de rede); passo do workflow; aparência e toque no celular/A04 (números de dano, flash, botão); desempenho com muitos jogadores batendo ao mesmo tempo.
+- Limitações conhecidas / NÃO feito: sem arma de longa distância (o Documento Mestre pede pelo menos uma no MVP; fica para depois do crafting), sem munição, durabilidade, ruído nem animação própria de arma; sem mira/direção (o golpe vai no alvo mais próximo); sem compensação de lag (o cliente vê os outros ~100 ms atrás: golpes na borda do alcance podem errar por pouco); sem escolha manual de arma; porrete só vem de zumbi até o crafting (Etapa 10); sem placar/estatística de mortes; mochila continua expirando em 5 min; proteção de reaparecimento de 3 s é decisão a confirmar (ver DECISOES_TECNICAS).
+
+## Critério de aceite da Etapa 9
+O servidor decide o resultado e impede dano fora das regras. Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de segurança" (atacante atualizado), "Teste de sobrevivência" e "Teste de combate PvP" (todos OK), e (2) o usuário testar em 2 aparelhos num servidor público: um bate no outro (vê o número de dano, a vida cai no outro), o outro morre e deixa a mochila, reaparece com 3 s de proteção.
+
+## Arquivos desta etapa (Etapa 9) - vão no `WORLD-ZERO-etapa9.zip`
+Novos: `packages/shared/src/combat.ts`, `packages/shared/src/combat.test.ts`, `apps/server/src/duel.ts`
+Alterados: `packages/shared/src/{index,items,life,mobs,mobs.test,protocol}.ts`, `apps/server/src/{attacker.ts,rooms/WorldRoom.ts}`, `apps/server/package.json`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,ui/SurvivalUi.ts}`, `PROGRESSO.md`, `CHANGELOG.md`, `README.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (novo passo "Teste de combate PvP").
+Apagados: nenhum.

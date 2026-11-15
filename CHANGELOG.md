@@ -1,5 +1,17 @@
 # Changelog
 
+## Etapa 9 - Combate e PvP
+- Golpe de jogador contra jogador e contra criatura decidido 100% no servidor (`performAttack` em `shared/combat.ts`): atacante vivo, `actionId` novo, recarga DA ARMA, alvo mais próximo com alcance e linha de visão, vítima viva e sem proteção, dano.
+- Arma simples: porrete (`club`, 20 de dano, alcance 52, recarga 800 ms), largado por zumbis (8%). O servidor usa a arma de maior dano do inventário; sem arma, punho (10 / 48 / 700 ms). O cliente não escolhe arma, alvo nem dano.
+- Errar também gasta a recarga. Parede e árvore bloqueiam golpe (água não).
+- Jogador desconectado (janela de reconexão de 15 s) continua no mundo e pode ser ferido e morrer (sair no meio da luta não salva).
+- Proteção curta de 3 s contra outros jogadores só logo após reaparecer; acaba na hora se o protegido atacar.
+- Morte por jogador: mochila no local (já existia), crédito da morte (`killCredit`, janela de 15 s) e evento `kill`.
+- Protocolo 5: `COMBAT_EVENT` (só feedback visual: acerto, erro, morte) e `PLAYER_STATE.weapon`.
+- Cliente: números de dano flutuantes, anel de golpe, flash vermelho ao ser atingido, vibração ao acertar, linha "Arma: ..." no HUD, botão ATACAR escurece durante a recarga (só visual).
+- Testes: 27 novos em `combat.test.ts` (117 no total em `shared`); novos ataques forjados em `attacker.ts`; novo `duel.ts` (2 clientes reais, servidor novo) e passo "Teste de combate PvP" no workflow.
+- Ainda não rodado: servidor real, `duel.ts` e cliente no celular (ver PROGRESSO.md).
+
 ## Etapa 8 - Zumbis e animais
 - Zumbis (perseguem/atacam) e cervos (fogem), simulação por proximidade, ataque corpo a corpo básico, loot, protocolo 4.
 
