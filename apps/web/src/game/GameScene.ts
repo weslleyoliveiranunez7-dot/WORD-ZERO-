@@ -94,6 +94,7 @@ export class GameScene extends Phaser.Scene {
   private torchBtn?: HTMLButtonElement;
   private torchKey?: Phaser.Input.Keyboard.Key;
   private torchOn = true; // jogador quer a tocha acesa
+  private litOthers: { x: number; y: number }[] = []; // outros jogadores com tocha acesa (o servidor decide)
   private hasTorch = true; // tem tocha no inventario (offline: sempre, para testar)
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private joystick?: VirtualJoystick;
@@ -370,7 +371,7 @@ export class GameScene extends Phaser.Scene {
       this.player.setAngle(0);
     }
     if (this.torchKey && Phaser.Input.Keyboard.JustDown(this.torchKey)) this.toggleTorch();
-    this.dayNight?.update(Date.now(), this.pos.x, this.pos.y, this.dead, this.hasTorch && this.torchOn, this.player.angle);
+    this.dayNight?.update(Date.now(), this.pos.x, this.pos.y, this.dead, this.hasTorch && this.torchOn, this.player.angle, this.litOthers);
     this.syncChunks();
     if (this.net) {
       this.updateBuildHints();
@@ -435,8 +436,10 @@ export class GameScene extends Phaser.Scene {
   // Jogadores remotos sao desenhados ~100 ms no passado, interpolando entre snapshots.
   private renderRemotes(): void {
     const sample = this.snaps.sample(performance.now() - INTERPOLATION_DELAY_MS);
+    this.litOthers = [];
     for (const [id, p] of sample) {
       if (id === this.net?.sessionId) continue;
+      if (p.torch && !this.deadIds.has(id)) this.litOthers.push({ x: p.x, y: p.y });
       let r = this.remotes.get(id);
       if (!r) {
         r = this.add.image(p.x, p.y, CHAR_OTHER).setOrigin(0.5, 0.68).setDepth(9);
@@ -534,6 +537,7 @@ export class GameScene extends Phaser.Scene {
   private toggleTorch(): void {
     if (!this.hasTorch) return;
     this.torchOn = !this.torchOn;
+    this.net?.setTorch(this.torchOn);
     this.refreshTorchBtn();
   }
 

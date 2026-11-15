@@ -16,6 +16,8 @@ export class DayNight {
   private glow: Phaser.GameObjects.Image; // brilho laranja ao redor da tocha
   private torch: Phaser.GameObjects.Image; // a tocha na mao
   private minutes = 0;
+  private otherTorches: Phaser.GameObjects.Image[] = []; // tochas na mao de outros jogadores (reaproveitadas)
+  private otherGlows: Phaser.GameObjects.Image[] = [];
 
   constructor(private scene: Phaser.Scene) {
     if (!scene.textures.exists(LIGHT_KEY)) {
@@ -65,7 +67,7 @@ export class DayNight {
     this.rt.resize(Math.ceil(width / zoom) + 4, Math.ceil(height / zoom) + 4);
   }
 
-  update(nowMs: number, px: number, py: number, dead: boolean, torchLit: boolean, tiltDeg: number): void {
+  update(nowMs: number, px: number, py: number, dead: boolean, torchLit: boolean, tiltDeg: number, others: { x: number; y: number }[] = []): void {
     this.minutes = gameMinutesAt(nowMs);
     const sky = skyAt(this.minutes);
     const lit = torchLit && !dead;
@@ -77,6 +79,25 @@ export class DayNight {
       this.torch.setPosition(px + 10, py + 2);
       this.torch.setAngle(tiltDeg);
       this.torch.setScale(1, 1 + flicker * 0.08);
+    }
+
+    // tochas dos outros jogadores (o SERVIDOR diz quem esta com a tocha acesa)
+    while (this.otherTorches.length < others.length) {
+      this.otherTorches.push(this.scene.add.image(0, 0, TORCH_KEY).setOrigin(0.5, 0.9).setDepth(10.5).setVisible(false));
+      this.otherGlows.push(this.scene.add.image(0, 0, LIGHT_KEY).setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa040).setDepth(26).setVisible(false));
+    }
+    for (let i = 0; i < this.otherTorches.length; i++) {
+      const o = others[i];
+      const t = this.otherTorches[i];
+      const gl = this.otherGlows[i];
+      if (!o) {
+        t.setVisible(false);
+        gl.setVisible(false);
+        continue;
+      }
+      const fl = 0.5 + 0.5 * Math.sin(nowMs / 90 + i * 1.7) * Math.sin(nowMs / 233 + i);
+      t.setVisible(true).setPosition(o.x + 10, o.y + 2).setScale(1, 1 + fl * 0.08);
+      gl.setVisible(sky.alpha > 0.02).setPosition(o.x, o.y).setScale((TORCH_RADIUS * 1.5) / LIGHT_SIZE).setAlpha(Math.min(0.35, 0.1 + sky.alpha * 0.22) * (0.85 + fl * 0.15));
     }
 
     if (sky.alpha < 0.02) {
@@ -93,6 +114,8 @@ export class DayNight {
     this.rt.fill(sky.color, sky.alpha);
     this.stamp.setScale((radius * 2) / LIGHT_SIZE);
     this.rt.erase(this.stamp, lx, ly);
+    this.stamp.setScale((TORCH_RADIUS * 2) / LIGHT_SIZE);
+    for (const o of others) this.rt.erase(this.stamp, o.x - wv.centerX + this.rt.width / 2, o.y - wv.centerY + this.rt.height / 2);
 
     this.glow.setVisible(lit);
     if (lit) {
@@ -107,5 +130,7 @@ export class DayNight {
     this.stamp.destroy();
     this.glow.destroy();
     this.torch.destroy();
+    for (const i of this.otherTorches) i.destroy();
+    for (const i of this.otherGlows) i.destroy();
   }
 }
