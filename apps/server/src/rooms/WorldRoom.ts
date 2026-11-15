@@ -5,13 +5,15 @@ import {
   KICK_CODE,
   LootWorld,
   MobWorld,
-  PLAYER_ATTACK_DAMAGE,
   MAX_REJECT_NOTICES_PER_SECOND,
   PROTOCOL_VERSION,
   PlayerGuard,
   PlayerLife,
   PlayerSim,
   applySave,
+  bestWeapon,
+  killCredit,
+  performAttack,
   makeSave,
   parseSave,
   RECONNECT_WINDOW_SECONDS,
@@ -24,6 +26,8 @@ import {
   parseJoinOptions,
   type ActionRejectedMsg,
   type ActionResult,
+  type CombatEventMsg,
+  type Fighter,
   type EntityUpdateMsg,
   type InventoryUpdateMsg,
   type PlayerSnap,
@@ -102,21 +106,18 @@ export class WorldRoom extends Room {
       this.finish(client, p, "REQUEST_INTERACT", p.life.interact(r.msg.actionId, Date.now(), this.world, this.loot, p.sim.x, p.sim.y));
     });
 
-    // Etapa 8: golpe corpo a corpo. Alvo = criatura viva mais proxima da posicao que o SERVIDOR conhece.
+    // Etapa 8/9: golpe corpo a corpo. A mensagem so tem { actionId }. Arma, alvo, alcance, linha de visao, recarga e dano
+    // saem do SERVIDOR (performAttack, em shared): posicao e inventario que o servidor conhece, nunca dados do cliente.
     this.onMessage("REQUEST_ATTACK", (client, raw) => {
       const p = this.admit(client);
       if (!p) return;
       const r = inspectAttack(raw);
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
       const now = Date.now();
-      const target = this.mobs.nearest(p.sim.x, p.sim.y);
-      if (!target) return this.finish(client, p, "REQUEST_ATTACK", { ok: false, reason: "nada_por_perto", weight: 0 });
-      const res = p.life.startAttack(r.msg.actionId, now);
-      if (res.ok) {
-        const hit = this.mobs.damage(target, PLAYER_ATTACK_DAMAGE, now);
-        if (hit.killed) this.loot.addDrop(target.x, target.y, hit.drops, now); // loot da criatura no chao
-      }
-      this.finish(client, p, "REQUEST_ATTACK", res);
+      const out = performAttack(this.world, this.mobs, this.fighter(client.sessionId, p), this.fighters(), r.msg.actionId, now);
+      for (const ev of out.events) this.emitCombat(ev);
+      if (out.drop) this.loot.addDrop(out.drop.x, out.drop.y, out.drop.items, now); // loot da criatura no chao
+      this.finish(client, p, "REQUEST_ATTACK", out.res);
     });
 
     this.onMessage("REQUEST_RESPAWN", (client, raw) => {
@@ -142,6 +143,21 @@ export class WorldRoom extends Room {
 
     this.setSimulationInterval((dtMs) => this.update(dtMs), 1000 / SERVER_TICK_RATE);
     console.log(`[WorldRoom] criada (max ${this.maxClients} jogadores, ${SERVER_TICK_RATE} Hz, tempo de sobrevivencia x${this.survivalScale})`);
+  }
+
+  // Etapa 9: todos os jogadores presentes (inclusive os da janela de reconexao: sair no meio da luta nao salva ninguem).
+  private fighter(id: string, p: PlayerEntry): Fighter {
+    return { id, x: p.sim.x, y: p.sim.y, life: p.life };
+  }
+  private fighters(): Fighter[] {
+    const out: Fighter[] = [];
+    for (const [id, p] of this.players) out.push(this.fighter(id, p));
+    return out;
+  }
+
+  // Feedback visual para todos. Nao muda nenhum estado (vida, morte e loot chegam pelos canais normais).
+  private emitCombat(ev: CombatEventMsg): void {
+    this.broadcast("COMBAT_EVENT", ev);
   }
 
   // Valida a versao, recusa personagem ja conectado e carrega o save (se houver). Falha de leitura: recusa a entrada
@@ -304,8 +320,9 @@ export class WorldRoom extends Room {
       dead: p.life.dead,
       respawnInMs: p.life.respawnInMs(now),
       lost: p.life.lost,
+      weapon: bestWeapon(p.life.inventory).item,
     };
-    const key = `${state.health}|${state.hunger}|${state.thirst}|${state.energy}|${state.speedMul}|${state.dead}`;
+    const key = `${state.health}|${state.hunger}|${state.thirst}|${state.energy}|${state.speedMul}|${state.dead}|${state.weapon}`;
     if (force || key !== p.lastStateKey || now - p.lastStateSent >= STATE_HEARTBEAT_MS) {
       p.lastStateKey = key;
       p.lastStateSent = now;
@@ -342,11 +359,14 @@ export class WorldRoom extends Room {
         const y0 = p.sim.y;
         if (p.sim.step(this.world, dt).corrected) console.error(`[WorldRoom] BUG: movimento de ${id} corrigido pelo servidor`);
         const moving = Math.hypot(p.sim.x - x0, p.sim.y - y0) > 0.01;
-        if (p.connected && p.life.tick(dt * this.survivalScale, moving, now)) {
+        // Jogador desconectado (janela de reconexao) NAO envelhece (dt 0), mas pode ser ferido e morrer: tick com dt 0 registra a morte.
+        if (p.life.tick(p.connected ? dt * this.survivalScale : 0, moving, now)) {
           p.sim.stop();
           this.loot.addDrop(p.sim.x, p.sim.y, p.life.lost, now); // mochila no local da morte (outros podem pegar)
           void this.persist(p); // salva ja: sem isso, reiniciar o servidor devolveria os itens que estao na mochila
-          console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens)`);
+          const killer = killCredit(p.life, id, now);
+          if (killer && this.players.has(killer)) this.emitCombat({ kind: "kill", attacker: killer, victim: id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10 });
+          console.log(`[WorldRoom] morreu: ${id} (perdeu ${p.life.lost.reduce((n, s) => n + s.qty, 0)} itens${killer ? `; morto por ${killer}` : ""})`);
         }
       }
       if (p.connected && now - p.lastSave >= AUTOSAVE_MS) void this.persist(p);
