@@ -3,15 +3,20 @@ import {
   PLAYER_HALF_SIZE,
   CHUNK_SIZE,
   ChunkedWorld,
+  INTERPOLATION_DELAY_MS,
+  SnapshotBuffer,
   TILE_ORDER,
   inputToVelocity,
   moveWithCollision,
   type Chunk,
   type TileType,
   type Vec2,
+  type WorldSnapshot,
 } from "@worldzero/shared";
 import { Hud } from "../ui/Hud";
 import { Minimap } from "../ui/Minimap";
+import { NetClient } from "../net/NetClient";
+import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 
 const TILE_COLORS: Record<TileType, number[]> = {
@@ -29,6 +34,15 @@ export class GameScene extends Phaser.Scene {
   private chunkImgs = new Map<number, Phaser.GameObjects.Image>();
   private lastChunk = "";
   private minimap!: Minimap;
+  // rede (so no modo online)
+  private net?: NetClient;
+  private snaps = new SnapshotBuffer();
+  private remotes = new Map<string, Phaser.GameObjects.Arc>();
+  private synced = false;
+  private seq = 0;
+  private lastIx = 0;
+  private lastIy = 0;
+  private inputTimer = 0;
   private pos!: Vec2;
   private player!: Phaser.GameObjects.Arc;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
@@ -41,7 +55,7 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
-  create(): void {
+  create(data?: { online?: boolean }): void {
     this.world = new ChunkedWorld();
     this.pos = { ...this.world.spawn };
     this.syncChunks();
@@ -76,6 +90,11 @@ export class GameScene extends Phaser.Scene {
 
     if (isTouchDevice()) this.joystick = new VirtualJoystick();
     this.hud = new Hud();
+    if (data?.online) {
+      this.net = new NetClient(getServerUrl());
+      this.net.onSnapshot = (snap) => this.onSnapshot(snap);
+      this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
+    }
     this.minimap = new Minimap(this.world);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -83,6 +102,9 @@ export class GameScene extends Phaser.Scene {
       this.joystick?.destroy();
       this.hud.destroy();
       this.minimap.destroy();
+      this.net?.close();
+      this.remotes.forEach((r) => r.destroy());
+      this.remotes.clear();
       this.chunkImgs.forEach((_img, k) => this.removeChunk(k));
       this.chunkImgs.clear();
     });
@@ -97,6 +119,10 @@ export class GameScene extends Phaser.Scene {
     this.pos = moveWithCollision(this.world, this.pos, vel, delta / 1000);
     this.player.setPosition(this.pos.x, this.pos.y);
     this.syncChunks();
+    if (this.net) {
+      this.sendInput(ix, iy, delta);
+      this.renderRemotes();
+    }
 
     this.hudTimer += delta;
     if (this.hudTimer >= 250) {
@@ -107,8 +133,53 @@ export class GameScene extends Phaser.Scene {
       const fps = Math.round(this.game.loop.actualFps);
       const cx = Math.floor(tx / CHUNK_SIZE);
       const cy = Math.floor(ty / CHUNK_SIZE);
-      this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados`);
+      const net = this.net ? ` | ${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
+      this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}`);
       this.minimap.update(this.pos.x, this.pos.y);
+    }
+  }
+
+  private sendInput(ix: number, iy: number, delta: number): void {
+    const cx = Math.max(-1, Math.min(1, ix));
+    const cy = Math.max(-1, Math.min(1, iy));
+    this.inputTimer += delta;
+    if (cx !== this.lastIx || cy !== this.lastIy || this.inputTimer >= 50) {
+      this.lastIx = cx;
+      this.lastIy = cy;
+      this.inputTimer = 0;
+      this.net?.sendInput({ seq: ++this.seq, ix: cx, iy: cy });
+    }
+  }
+
+  private onSnapshot(snap: WorldSnapshot): void {
+    this.snaps.push(performance.now(), snap);
+    const me = snap.players.find((p) => p.id === this.net?.sessionId);
+    if (!me) return;
+    // 1o snapshot: assume a posicao do servidor. Depois: so corrige se divergir muito
+    // (reconciliacao de verdade por seq fica para a Etapa 5).
+    if (!this.synced || Math.hypot(me.x - this.pos.x, me.y - this.pos.y) > 64) {
+      this.pos = { x: me.x, y: me.y };
+      this.synced = true;
+    }
+  }
+
+  // Jogadores remotos sao desenhados ~100 ms no passado, interpolando entre snapshots.
+  private renderRemotes(): void {
+    const sample = this.snaps.sample(performance.now() - INTERPOLATION_DELAY_MS);
+    for (const [id, p] of sample) {
+      if (id === this.net?.sessionId) continue;
+      let r = this.remotes.get(id);
+      if (!r) {
+        r = this.add.circle(p.x, p.y, PLAYER_HALF_SIZE, 0x4ea1f2).setStrokeStyle(2, 0x222222).setDepth(9);
+        this.remotes.set(id, r);
+      }
+      r.setPosition(p.x, p.y);
+    }
+    for (const [id, r] of this.remotes) {
+      if (!sample.has(id)) {
+        r.destroy();
+        this.remotes.delete(id);
+      }
     }
   }
 

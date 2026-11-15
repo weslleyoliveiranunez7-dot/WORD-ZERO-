@@ -1,13 +1,13 @@
 import Phaser from "phaser";
 import { GAME_NAME, PROTOCOL_VERSION } from "@worldzero/shared";
-
-const SERVER_URL: string = import.meta.env.VITE_SERVER_URL ?? "http://localhost:2567";
+import { getServerUrl } from "../net/serverUrl";
 
 // Tela inicial: confere o servidor (opcional) e abre o mapa de teste.
 export class BootScene extends Phaser.Scene {
   private title!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
   private playButton!: Phaser.GameObjects.Text;
+  private onlineButton!: Phaser.GameObjects.Text;
   private onResize = (): void => this.layout();
 
   constructor() {
@@ -16,7 +16,7 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     this.title = this.add
-      .text(0, 0, `${GAME_NAME}\nEtapa 2 - Movimento (protocolo v${PROTOCOL_VERSION})`, {
+      .text(0, 0, `${GAME_NAME}\nEtapa 4 - Multiplayer (protocolo v${PROTOCOL_VERSION})`, {
         fontFamily: "sans-serif",
         fontSize: "26px",
         color: "#d8e6d0",
@@ -37,6 +37,17 @@ export class BootScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
     this.playButton.on("pointerdown", () => this.scene.start("GameScene"));
+    this.onlineButton = this.add
+      .text(0, 0, "JOGAR ONLINE", {
+        fontFamily: "sans-serif",
+        fontSize: "24px",
+        color: "#0b0f0c",
+        backgroundColor: "#6fb6f2",
+        padding: { x: 20, y: 12 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.onlineButton.on("pointerdown", () => this.scene.start("GameScene", { online: true }));
 
     this.layout();
     this.scale.on("resize", this.onResize);
@@ -49,17 +60,18 @@ export class BootScene extends Phaser.Scene {
     this.title.setPosition(width / 2, height / 2 - 70);
     this.status.setPosition(width / 2, height / 2 - 10);
     this.playButton.setPosition(width / 2, height / 2 + 70);
+    this.onlineButton.setPosition(width / 2, height / 2 + 140);
   }
 
   private async checkServer(): Promise<void> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 3000);
     try {
-      const res = await fetch(`${SERVER_URL}/health`, { signal: ctrl.signal });
+      const res = await fetch(`${getServerUrl().replace(/^ws/, "http")}/health`, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (this.status.active) this.status.setText("Servidor: online").setColor("#6fcf6f");
     } catch {
-      if (this.status.active) this.status.setText("Servidor: offline (o mapa de teste funciona sem ele)").setColor("#d96b6b");
+      if (this.status.active) this.status.setText("Servidor: offline (o mapa offline funciona sem ele)").setColor("#d96b6b");
     } finally {
       clearTimeout(timer);
     }
