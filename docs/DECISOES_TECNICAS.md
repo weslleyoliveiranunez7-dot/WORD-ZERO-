@@ -69,3 +69,13 @@
 - **Telhado é camada, não peça de topo.** Pode coexistir com parede/porta/janela no mesmo tile; exige apoio. Sem regra de interior ainda (só visual: some quando o jogador está debaixo).
 - **Acesso por dono, não por peça.** O dono libera o jogador mais próximo para TODAS as suas portas e baús (máx. 8). O servidor escolhe quem, pela posição que conhece, para o cliente nunca mandar identificador de ninguém.
 - **Reparo = madeira pela vida que faltava** (1 por 25). Valor provisório.
+
+
+## Etapa 12 - Banco e persistência (2026-11-15)
+- **`pg` direto em vez de ORM**: o esquema é pequeno (3 tabelas) e o SQL fica visível e revisável. Migrações próprias (lista no código) em vez de ferramenta externa: roda sozinha ao ligar no Render, sem passo manual.
+- **Mesmo modelo de dados da Etapa 7** (tabela `players` com `id` e `data jsonb`, estruturas como registro `world-structures`): quem já usa o Supabase por REST pode apontar `DATABASE_URL` para o mesmo banco e nada muda de lugar. O armazenamento por REST continua existindo, sem snapshots/auditoria/backup.
+- **Snapshots no mesmo banco**: protegem contra bug, corrupção e trapaça (voltar atrás), NÃO contra perder o banco. Para isso: `backup export` guardado fora e/ou o backup do provedor. Decisão em aberto: agendar backup externo (Etapa 17 ou antes de abrir ao público).
+- **Gravar por mudança de inventário (~2 s)** em vez de gravar a cada mudança: limita a carga no banco a 1 gravação/2 s/jogador e perde, na pior queda, no máximo ~2 s de progresso e a posição desde o último autosave (30 s).
+- **Recuperar só com dado que passa na validação de carregar**: nunca se restaura algo que o jogo recusaria. Sem snapshot válido, o jogador recomeça (o quebrado fica guardado) e as estruturas continuam desligadas, para não sobrescrever as bases de todos.
+- **Banco fora do ar**: quem tenta entrar é recusado (4004) em vez de entrar "zerado"; quem já está jogando continua e regrava quando o banco volta. Não há fila de gravações pendentes em disco (decisão em aberto).
+- **SSL**: banco remoto usa SSL sem verificar o certificado por padrão (os planos gratuitos usam certificados que o Node não confia sozinho); `DATABASE_SSL=verify` exige certificado válido.
