@@ -38,6 +38,7 @@ async function main(): Promise<void> {
   let inv: InventoryUpdateMsg | undefined;
   room.onMessage("PLAYER_STATE", (m: PlayerStateMsg) => (state = m));
   room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => (inv = m));
+  room.onMessage("ENTITY_UPDATE", () => undefined);
   room.onMessage("ACTION_REJECTED", (m: { reason: string }) => reasons.push(m.reason));
   room.onLeave((code) => {
     leftCode = code;
@@ -64,7 +65,9 @@ async function main(): Promise<void> {
   // 3) mensagens/acoes que nao existem ou ainda nao sao permitidas
   room.send("TELEPORT", { x: 100, y: 100 });
   await sleep(1100);
-  room.send("REQUEST_ATTACK", { target: "alguem", damage: 9999 });
+  room.send("REQUEST_ATTACK", { target: "alguem", damage: 9999 }); // Etapa 8: ataque existe, mas campos forjados sao recusados
+  await sleep(1100);
+  room.send("REQUEST_CRAFT", { recipe: "espada" }); // ainda nao implementado (Etapa 10)
   await sleep(1100);
   check("mensagem desconhecida recusada", reasons.includes("tipo_desconhecido"), `motivos: ${[...new Set(reasons)].join(",")}`);
   check("acao nao implementada recusada", reasons.includes("acao_nao_implementada"), `motivos: ${[...new Set(reasons)].join(",")}`);

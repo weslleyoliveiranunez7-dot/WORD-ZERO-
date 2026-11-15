@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     const p = s.players.find((q) => q.id === id);
     if (p) me = { x: p.x, y: p.y, dead: p.dead };
   });
+  room.onMessage("ENTITY_UPDATE", () => undefined);
   room.onMessage("ACTION_REJECTED", (m: { reason: string }) => reasons.push(m.reason));
   const until = async (cond: () => boolean, ms: number): Promise<boolean> => {
     const end = Date.now() + ms;

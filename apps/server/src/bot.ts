@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   let room: Room = await client.joinOrCreate(WORLD_ROOM_NAME, { protocol: PROTOCOL_VERSION });
   const sessionId = room.sessionId;
   const hook = (r: Room): void => {
+    r.onMessage("ENTITY_UPDATE", () => undefined);
     r.onMessage("WORLD_SNAPSHOT", (s: WorldSnapshot) => {
       last = s;
       const me = s.players.find((p) => p.id === sessionId);
