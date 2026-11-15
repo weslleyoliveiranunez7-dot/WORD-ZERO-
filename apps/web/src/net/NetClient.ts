@@ -10,6 +10,7 @@ import {
   type JoinOptions,
   type PlayerInputMsg,
   type PlayerStateMsg,
+  type RecipeId,
   type WorldSnapshot,
 } from "@worldzero/shared";
 
@@ -121,6 +122,10 @@ export class NetClient {
 
   attack(): void {
     if (this.status === "online") this.room?.send("REQUEST_ATTACK", { actionId: ++this.actionId });
+  }
+
+  craft(recipe: RecipeId): void {
+    if (this.status === "online") this.room?.send("REQUEST_CRAFT", { recipe, actionId: ++this.actionId });
   }
 
   respawn(): void {
