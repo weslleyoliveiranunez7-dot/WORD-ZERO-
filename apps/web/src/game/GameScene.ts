@@ -45,6 +45,8 @@ export class GameScene extends Phaser.Scene {
   private survivalUi?: SurvivalUi;
   private lootGfx?: Phaser.GameObjects.Graphics; // marcas de recurso esgotado e mochilas (so desenho)
   private actionBtn?: HTMLButtonElement;
+  private attackBtn?: HTMLButtonElement;
+  private mobSprites = new Map<number, Phaser.GameObjects.Arc>(); // criaturas (so desenho; posicao vem do servidor)
   private speedMul = 1; // vem do servidor (energia baixa = mais lento)
   private dead = false; // vem do servidor
   private deadIds = new Set<string>();
@@ -122,6 +124,15 @@ export class GameScene extends Phaser.Scene {
       });
       document.body.appendChild(btn);
       this.actionBtn = btn;
+      const atk = document.createElement("button");
+      atk.textContent = "ATACAR";
+      Object.assign(atk.style, { position: "fixed", right: "108px", bottom: "56px", width: "76px", height: "76px", borderRadius: "50%", border: "2px solid #fff", background: "#a63a3a", color: "#fff", font: "bold 12px monospace", zIndex: "16", touchAction: "manipulation" });
+      atk.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        this.net?.attack();
+      });
+      document.body.appendChild(atk);
+      this.attackBtn = atk;
       this.net.onInventory = (m) => this.survivalUi?.setInventory(m);
       this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
     }
@@ -134,6 +145,9 @@ export class GameScene extends Phaser.Scene {
       this.minimap.destroy();
       this.survivalUi?.destroy();
       this.actionBtn?.remove();
+      this.attackBtn?.remove();
+      this.mobSprites.forEach((m) => m.destroy());
+      this.mobSprites.clear();
       this.net?.close();
       this.remotes.forEach((r) => r.destroy());
       this.remotes.clear();
@@ -188,6 +202,7 @@ export class GameScene extends Phaser.Scene {
 
   private onSnapshot(snap: WorldSnapshot): void {
     this.snaps.push(performance.now(), snap);
+    this.drawMobs(snap);
     this.deadIds = new Set(snap.players.filter((p) => p.dead).map((p) => p.id));
     const me = snap.players.find((p) => p.id === this.net?.sessionId);
     if (!me) return;
@@ -244,6 +259,27 @@ export class GameScene extends Phaser.Scene {
       g.fillRect(d.x - 9, d.y - 9, 18, 18);
       g.lineStyle(2, 0xffd36b, 1);
       g.strokeRect(d.x - 9, d.y - 9, 18, 18);
+    }
+  }
+
+  // Zumbi = vermelho, cervo = marrom claro. Anda suave ate a posicao do servidor; anel mais fino = menos vida.
+  private drawMobs(snap: WorldSnapshot): void {
+    const seen = new Set<number>();
+    for (const m of snap.mobs ?? []) {
+      seen.add(m.id);
+      let s = this.mobSprites.get(m.id);
+      if (!s) {
+        s = this.add.circle(m.x, m.y, m.k === 0 ? 11 : 9, m.k === 0 ? 0xc0392b : 0xc8a165).setDepth(9);
+        this.mobSprites.set(m.id, s);
+      }
+      s.setPosition(s.x + (m.x - s.x) * 0.5, s.y + (m.y - s.y) * 0.5);
+      s.setStrokeStyle(Math.max(1, Math.round((m.hp / 100) * 4)), 0xffffff);
+    }
+    for (const [id, s] of this.mobSprites) {
+      if (!seen.has(id)) {
+        s.destroy();
+        this.mobSprites.delete(id);
+      }
     }
   }
 
