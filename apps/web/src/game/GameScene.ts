@@ -1,14 +1,17 @@
 import Phaser from "phaser";
 import {
   PLAYER_HALF_SIZE,
-  createTestMap,
+  CHUNK_SIZE,
+  ChunkedWorld,
+  TILE_ORDER,
   inputToVelocity,
   moveWithCollision,
-  type TileMap,
+  type Chunk,
   type TileType,
   type Vec2,
 } from "@worldzero/shared";
 import { Hud } from "../ui/Hud";
+import { Minimap } from "../ui/Minimap";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 
 const TILE_COLORS: Record<TileType, number[]> = {
@@ -20,9 +23,12 @@ const TILE_COLORS: Record<TileType, number[]> = {
 
 const VISIBLE_TILES_SHORT_SIDE = 10; // quantos tiles cabem no lado menor da tela
 
-// Etapa 2: mapa de teste, personagem temporario, colisao, camera, teclado e joystick.
+// Etapa 3: mundo em chunks (gerados por seed), carrega os proximos e descarrega os distantes.
 export class GameScene extends Phaser.Scene {
-  private map!: TileMap;
+  private world!: ChunkedWorld;
+  private chunkGfx = new Map<number, Phaser.GameObjects.Graphics>();
+  private lastChunk = "";
+  private minimap!: Minimap;
   private pos!: Vec2;
   private player!: Phaser.GameObjects.Arc;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
@@ -36,10 +42,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.map = createTestMap();
-    this.pos = { ...this.map.spawn };
-
-    this.drawMap();
+    this.world = new ChunkedWorld();
+    this.pos = { ...this.world.spawn };
+    this.syncChunks();
 
     this.player = this.add.circle(this.pos.x, this.pos.y, PLAYER_HALF_SIZE, 0xf2c14e);
     this.player.setStrokeStyle(2, 0x222222);
@@ -47,7 +52,7 @@ export class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     cam.setBackgroundColor("#0b0f0c");
-    cam.setBounds(0, 0, this.map.width * this.map.tileSize, this.map.height * this.map.tileSize);
+    cam.setBounds(0, 0, this.world.width * this.world.tileSize, this.world.height * this.world.tileSize);
     cam.startFollow(this.player, true, 0.12, 0.12);
     this.applyZoom();
     this.scale.on("resize", this.onResize);
@@ -71,11 +76,15 @@ export class GameScene extends Phaser.Scene {
 
     if (isTouchDevice()) this.joystick = new VirtualJoystick();
     this.hud = new Hud();
+    this.minimap = new Minimap(this.world);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off("resize", this.onResize);
       this.joystick?.destroy();
       this.hud.destroy();
+      this.minimap.destroy();
+      this.chunkGfx.forEach((g) => g.destroy());
+      this.chunkGfx.clear();
     });
   }
 
@@ -85,32 +94,54 @@ export class GameScene extends Phaser.Scene {
     const iy = down("s", "down") - down("w", "up") + (this.joystick?.vector.y ?? 0);
 
     const vel = inputToVelocity(ix, iy);
-    this.pos = moveWithCollision(this.map, this.pos, vel, delta / 1000);
+    this.pos = moveWithCollision(this.world, this.pos, vel, delta / 1000);
     this.player.setPosition(this.pos.x, this.pos.y);
+    this.syncChunks();
 
     this.hudTimer += delta;
     if (this.hudTimer >= 250) {
       this.hudTimer = 0;
-      const tx = Math.floor(this.pos.x / this.map.tileSize);
-      const ty = Math.floor(this.pos.y / this.map.tileSize);
+      const ts = this.world.tileSize;
+      const tx = Math.floor(this.pos.x / ts);
+      const ty = Math.floor(this.pos.y / ts);
       const fps = Math.round(this.game.loop.actualFps);
-      this.hud.setText(`FPS ${fps} | tile ${tx},${ty}`);
+      const cx = Math.floor(tx / CHUNK_SIZE);
+      const cy = Math.floor(ty / CHUNK_SIZE);
+      this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados`);
+      this.minimap.update(this.pos.x, this.pos.y);
     }
   }
 
   private applyZoom(): void {
     const { width, height } = this.scale;
-    const zoom = Math.min(width, height) / (this.map.tileSize * VISIBLE_TILES_SHORT_SIDE);
+    const zoom = Math.min(width, height) / (this.world.tileSize * VISIBLE_TILES_SHORT_SIDE);
     this.cameras.main.setZoom(Phaser.Math.Clamp(zoom, 0.75, 3));
   }
 
-  // Desenha todos os tiles uma unica vez num Graphics estatico (mapa pequeno de teste).
-  private drawMap(): void {
+  // So mexe nos chunks quando o jogador troca de chunk.
+  private syncChunks(): void {
+    const cs = CHUNK_SIZE * this.world.tileSize;
+    const key = `${Math.floor(this.pos.x / cs)},${Math.floor(this.pos.y / cs)}`;
+    if (key === this.lastChunk) return;
+    this.lastChunk = key;
+    const { loaded, unloaded } = this.world.updateLoaded(this.pos.x, this.pos.y);
+    for (const c of unloaded) {
+      const k = c.cy * this.world.chunksX + c.cx;
+      this.chunkGfx.get(k)?.destroy();
+      this.chunkGfx.delete(k);
+    }
+    for (const c of loaded) this.chunkGfx.set(c.cy * this.world.chunksX + c.cx, this.drawChunk(c));
+  }
+
+  // Um Graphics estatico por chunk (256 tiles); destruido quando o chunk e descarregado.
+  private drawChunk(chunk: Chunk): Phaser.GameObjects.Graphics {
     const g = this.add.graphics();
-    const ts = this.map.tileSize;
-    for (let ty = 0; ty < this.map.height; ty++) {
-      for (let tx = 0; tx < this.map.width; tx++) {
-        const type = this.map.tiles[ty * this.map.width + tx];
+    const ts = this.world.tileSize;
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const tx = chunk.cx * CHUNK_SIZE + lx;
+        const ty = chunk.cy * CHUNK_SIZE + ly;
+        const type = TILE_ORDER[chunk.tiles[ly * CHUNK_SIZE + lx]];
         const colors = TILE_COLORS[type];
         g.fillStyle(colors[(tx + ty) % colors.length], 1);
         g.fillRect(tx * ts, ty * ts, ts, ts);
@@ -120,5 +151,6 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+    return g;
   }
 }
