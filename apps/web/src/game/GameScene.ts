@@ -111,6 +111,7 @@ export class GameScene extends Phaser.Scene {
       this.survivalUi = new SurvivalUi();
       this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
       this.survivalUi.onRespawn = () => this.net?.respawn();
+      this.survivalUi.onCraft = (recipe) => this.net?.craft(recipe);
       this.net.onPlayerState = (st) => {
         if (this.dead && !st.dead) this.synced = false; // reapareceu: assume a posicao do servidor
         this.dead = st.dead;
