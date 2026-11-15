@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "bot": "tsx src/bot.ts"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.15.0",
@@ -17,6 +18,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
-    "typescript": "~5.6.3"
+    "typescript": "~5.6.3",
+    "colyseus.js": "^0.15.0"
   }
 }
