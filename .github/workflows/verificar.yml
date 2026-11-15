@@ -9,6 +9,21 @@ permissions:
 jobs:
   verificar:
     runs-on: ubuntu-latest
+    # Etapa 12: um PostgreSQL de verdade so para os testes de persistencia (sai junto com o job).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wz
+          POSTGRES_PASSWORD: wz
+          POSTGRES_DB: wz
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wz"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -99,6 +114,27 @@ jobs:
           cd apps/server
           SERVER_WS=ws://localhost:2569 pnpm exec tsx src/duel.ts 2>&1 | tee ../../pvp.log
 
+      - name: Teste de persistencia (arquivos + PostgreSQL real, migracoes, snapshots, backup)
+        id: persistencia
+        run: |
+          set -o pipefail
+          cd apps/server
+          DATABASE_URL=postgres://wz:wz@localhost:5432/wz pnpm exec tsx src/persistcheck.ts 2>&1 | tee ../../persistencia.log
+
+      - name: Teste de reinicio (servidor real: queda brusca, desligar/ligar, registro quebrado) - arquivos
+        id: reinicio_arquivos
+        run: |
+          set -o pipefail
+          cd apps/server
+          RESTART_PORT=2570 pnpm exec tsx src/restart.ts 2>&1 | tee ../../reinicio-arquivos.log
+
+      - name: Teste de reinicio (servidor real) - PostgreSQL
+        id: reinicio_postgres
+        run: |
+          set -o pipefail
+          cd apps/server
+          DATABASE_URL=postgres://wz:wz@localhost:5432/wz DATABASE_SSL=disable RESTART_PORT=2571 pnpm exec tsx src/restart.ts 2>&1 | tee ../../reinicio-postgres.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -121,6 +157,9 @@ jobs:
             echo "- Seguranca (cliente malicioso): ${{ steps.seguranca.outcome }}"
             echo "- Sobrevivencia (fome, sede, itens, morte, reaparecer): ${{ steps.sobrevivencia.outcome }}"
             echo "- Combate PvP (dano, recarga, alcance, morte, protecao): ${{ steps.pvp.outcome }}"
+            echo "- Persistencia (arquivos + PostgreSQL, migracoes, snapshots, backup): ${{ steps.persistencia.outcome }}"
+            echo "- Reinicio do servidor (arquivos): ${{ steps.reinicio_arquivos.outcome }}"
+            echo "- Reinicio do servidor (PostgreSQL): ${{ steps.reinicio_postgres.outcome }}"
             echo ""
             echo "### Logs dos bots"
             echo '```'
@@ -140,6 +179,21 @@ jobs:
             echo "### Teste de combate PvP (esperado: todos OK)"
             echo '```'
             cat pvp.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de persistencia (esperado: TODOS OK)"
+            echo '```'
+            cat persistencia.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de reinicio - arquivos (esperado: TODOS OK)"
+            echo '```'
+            cat reinicio-arquivos.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de reinicio - PostgreSQL (esperado: TODOS OK)"
+            echo '```'
+            cat reinicio-postgres.log 2>/dev/null || echo "(sem log)"
             echo '```'
             echo ""
             echo "### Log do servidor"
