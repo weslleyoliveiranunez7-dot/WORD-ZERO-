@@ -121,7 +121,7 @@ jobs:
           cd apps/server
           DATABASE_URL=postgres://wz:wz@localhost:5432/wz pnpm exec tsx src/persistcheck.ts 2>&1 | tee ../../persistencia.log
 
-      - name: Teste de reinicio (servidor real: queda brusca, desligar/ligar, registro quebrado) - arquivos
+      - name: "Teste de reinicio (servidor real - queda brusca, desligar/ligar, registro quebrado) - arquivos"
         id: reinicio_arquivos
         run: |
           set -o pipefail
