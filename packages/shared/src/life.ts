@@ -1,5 +1,6 @@
 import type { ChunkedWorld } from "./chunks";
 import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
+import { BUILD_COOLDOWN_MS } from "./building";
 import { craftItem } from "./crafting";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
 import { ITEMS } from "./items";
@@ -29,6 +30,7 @@ export class PlayerLife {
   private lastUseMs = -Infinity;
   private lastInteractMs = -Infinity;
   private lastAttackMs = -Infinity;
+  private lastBuildMs = -Infinity;
   private craftBusyUntilMs = 0; // Etapa 10: ate quando a fabricacao em andamento ocupa o jogador
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
   graceUntilMs = 0; // Etapa 9: ate quando o jogador esta protegido de OUTROS JOGADORES (so apos reaparecer)
@@ -107,6 +109,15 @@ export class PlayerLife {
     this.survival.damage(amount);
     this.lastHit = { by: byId, atMs: nowMs };
     return true;
+  }
+
+  // Etapa 11: porteiro de toda acao de construcao (vivo, actionId novo, intervalo minimo). A regra de jogo fica em StructureWorld.
+  beginBuild(actionId: number, nowMs: number): ActionResult {
+    if (this.dead) return fail("morto", 1);
+    if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
+    if (nowMs - this.lastBuildMs < BUILD_COOLDOWN_MS) return fail("em_recarga", 1);
+    this.lastBuildMs = nowMs;
+    return { ok: true };
   }
 
   // Etapa 10: fabricar. `recipe` vem da rede (ja validado por inspectCraft, mas craftItem revalida). Ingredientes e resultado

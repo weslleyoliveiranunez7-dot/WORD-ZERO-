@@ -105,6 +105,8 @@ export class ChunkedWorld {
   generatedTotal = 0;
   evictedTotal = 0;
   private cache = new Map<number, Chunk>();
+  extraOpaque: ((tx: number, ty: number) => boolean) | null = null; // Etapa 11: estruturas que bloqueiam a linha de visao (janela nao)
+  extraSolid: ((tx: number, ty: number) => boolean) | null = null; // Etapa 11: estruturas construidas (parede, bau, porta fechada)
 
   constructor(
     readonly seed: number = TEST_WORLD_SEED,
@@ -156,7 +158,8 @@ export class ChunkedWorld {
   // Fora do mundo conta como solido.
   isSolid(tx: number, ty: number): boolean {
     const t = this.tileAt(tx, ty);
-    return t === null ? true : t !== "grass";
+    if (t === null) return true;
+    return t !== "grass" || (this.extraSolid !== null && this.extraSolid(tx, ty));
   }
 
   // Carrega os chunks perto de (px,py) e descarta os distantes. Chame quando o jogador mudar de chunk.

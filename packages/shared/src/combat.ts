@@ -34,8 +34,10 @@ export function lineClear(world: ChunkedWorld, ax: number, ay: number, bx: numbe
   const ts = world.tileSize;
   for (let t = LOS_STEP_PX; t < d; t += LOS_STEP_PX) {
     const f = t / d;
-    const tile = world.tileAt(Math.floor((ax + (bx - ax) * f) / ts), Math.floor((ay + (by - ay) * f) / ts));
-    if (tile === null || tile === "wall" || tile === "tree") return false;
+    const tx = Math.floor((ax + (bx - ax) * f) / ts);
+    const ty = Math.floor((ay + (by - ay) * f) / ts);
+    const tile = world.tileAt(tx, ty);
+    if (tile === null || tile === "wall" || tile === "tree" || (world.extraOpaque !== null && world.extraOpaque(tx, ty))) return false;
   }
   return true;
 }

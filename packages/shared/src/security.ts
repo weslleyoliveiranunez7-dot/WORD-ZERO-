@@ -1,5 +1,6 @@
+import { isPieceKind } from "./building";
 import { isRecipeId } from "./crafting";
-import { parseInput, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
+import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -117,4 +118,20 @@ export function inspectCraft(raw: unknown): ActionInspection<CraftMsg> {
   const { recipe, actionId } = raw as Record<string, unknown>;
   if (!isRecipeId(recipe) || !isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
   return { msg: { recipe, actionId } };
+}
+
+// Etapa 11: REQUEST_BUILD. Campos por operacao; qualquer campo extra = manipulacao. Se o alvo existe, quem decide e o servidor.
+export function inspectBuild(raw: unknown): ActionInspection<BuildMsg> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { msg: null, reason: "formato_invalido", weight: 3 };
+  const op = (raw as Record<string, unknown>).op;
+  const bad = (reason: string, weight: number): ActionInspection<BuildMsg> => ({ msg: null, reason, weight });
+  if (op !== "place" && op !== "toggle" && op !== "repair" && op !== "trust" && op !== "deposit" && op !== "withdraw") return bad("valores_invalidos", 3);
+  const extra = inspectKeys(raw, op === "place" ? ["op", "actionId", "piece", "tx", "ty"] : op === "trust" ? ["op", "actionId"] : op === "toggle" || op === "repair" ? ["op", "actionId", "tx", "ty"] : ["op", "actionId", "tx", "ty", "slot"]);
+  if (extra) return { msg: null, ...extra };
+  const r = raw as Record<string, unknown>;
+  if (op === "trust") return isInt(r.actionId, 0, MAX_ACTION_ID) ? { msg: { op, actionId: r.actionId } } : bad("valores_invalidos", 3);
+  if (!isInt(r.actionId, 0, MAX_ACTION_ID) || !isInt(r.tx, 0, 100_000) || !isInt(r.ty, 0, 100_000)) return bad("valores_invalidos", 3);
+  if (op === "place") return isPieceKind(r.piece) ? { msg: { op, actionId: r.actionId, piece: r.piece, tx: r.tx, ty: r.ty } } : bad("valores_invalidos", 3);
+  if (op === "toggle" || op === "repair") return { msg: { op, actionId: r.actionId, tx: r.tx, ty: r.ty } };
+  return isInt(r.slot, 0, 63) ? { msg: { op, actionId: r.actionId, tx: r.tx, ty: r.ty, slot: r.slot } } : bad("valores_invalidos", 3);
 }

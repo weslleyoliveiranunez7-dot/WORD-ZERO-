@@ -1,10 +1,11 @@
+import type { PieceKind } from "./building";
 import type { RecipeId } from "./crafting";
 import type { ItemStack, Slot } from "./inventory";
 import type { ItemId } from "./items";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 6; // 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 7; // 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -27,6 +28,8 @@ export const SERVER_MESSAGES = [
   "SERVER_NOTICE",
   "SEASON_UPDATE",
   "ACTION_REJECTED",
+  "STRUCTURE_UPDATE",
+  "CHEST_UPDATE",
 ] as const;
 
 export type ClientMessage = (typeof CLIENT_MESSAGES)[number];
@@ -160,4 +163,27 @@ export interface CombatEventMsg {
 export interface CraftMsg {
   recipe: RecipeId;
   actionId: number;
+}
+
+// ---- Etapa 11: construcao. O cliente so diz O QUE quer fazer e ONDE (tile); dono, alcance, recursos, espaco e colisao saem do servidor.
+export type BuildMsg =
+  | { op: "place"; actionId: number; piece: PieceKind; tx: number; ty: number }
+  | { op: "toggle" | "repair"; actionId: number; tx: number; ty: number } // toggle: porta abre/fecha, bau pede o conteudo; repair: so o dono
+  | { op: "trust"; actionId: number } // da/tira o acesso do jogador MAIS PROXIMO (o servidor escolhe quem)
+  | { op: "deposit" | "withdraw"; actionId: number; tx: number; ty: number; slot: number }; // uma pilha inteira por vez
+
+// Servidor -> dono: todas as estruturas. Linha = [tx, ty, fundacao, topo, acesso, telhado]; topo: 0 nada, 1 parede, 2 porta fechada, 3 porta aberta, 4 bau, 5 janela; acesso: 0 nenhum, 1 dono, 2 liberado.
+export interface StructureUpdateMsg {
+  rows: [number, number, number, number, number, number][];
+}
+// Servidor -> dono do bau: o conteudo atual (so o dono, perto do bau, recebe).
+export interface ChestUpdateMsg {
+  tx: number;
+  ty: number;
+  slots: Slot[];
+}
+
+// Aviso curto do servidor (so texto para mostrar; nao muda estado).
+export interface ServerNoticeMsg {
+  text: string;
 }
