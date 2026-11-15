@@ -1,5 +1,9 @@
 # Changelog
 
+## Etapa 7 - Coleta e loot
+- Madeira, pedra e sucata coletáveis; mochila de morte; `REQUEST_INTERACT`; `ENTITY_UPDATE`; protocolo 3; botão COLETAR.
+- Sem persistência de inventário (pendente).
+
 ## [Não lançado]
 ### Etapa 6 - Personagem e sobrevivência (2026-11-14)
 - Shared: itens (4), inventário de 12 slots, `SurvivalSim` (vida, fome, sede, energia, tolerância, penalidade de velocidade), `PlayerLife` (usar item com cooldown e `actionId` idempotente, morte que zera o inventário, reaparecimento); validação estrita `inspectUseItem`/`inspectRespawn`; protocolo 2 (`PLAYER_STATE`, `INVENTORY_UPDATE`, `REQUEST_USE_ITEM`, `REQUEST_RESPAWN`, `PlayerSnap.dead`); 31 testes novos (69 no total).

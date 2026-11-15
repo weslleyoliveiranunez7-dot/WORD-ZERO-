@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-14
-Etapa atual: **Etapa 6 (Personagem e sobrevivência) - código escrito; lógica de `shared` testada em Node (31 testes novos, 69 no total); servidor, atacante, survivor e cliente AINDA NÃO rodados**
+Etapa atual: **Etapa 7 (Coleta e loot) - código escrito; 8 testes novos de `shared` passam (shim Node); servidor e cliente AINDA NÃO rodados. Persistência de inventário NÃO feita (ver abaixo).**
+(Etapa 6 anterior:) **Etapa 6 (Personagem e sobrevivência) - código escrito; lógica de `shared` testada em Node (31 testes novos, 69 no total); servidor, atacante, survivor e cliente AINDA NÃO rodados**
 (Decisões do usuário em 2026-11-14: itens da morte viram loot no local, baús futuros também saqueáveis por outros jogadores; kit inicial ao reaparecer aprovado. Loot entra na Etapa 7.)
 (Etapa 5: usuário pediu "Etapa 6" ao enviar o repositório; o resultado do workflow da Etapa 5 não foi informado, então ela segue como "escrita" até o passo "Teste de segurança" ser visto verde.)
 (Etapa 4: usuário informou que o workflow passou, incluindo os 2 bots; teste em 2 aparelhos reais não foi feito, usuário optou por pular.)
@@ -203,3 +204,15 @@ Ver `docs/DECISOES_TECNICAS.md`.
 
 ## Prompt para continuar em outra IA
 "Leia `PROGRESSO.md` e `docs/DOCUMENTO_MESTRE.txt` inteiros. Inspecione o repositório antes de alterar qualquer coisa. Continue a partir da etapa indicada em PROGRESSO.md, execute somente essa etapa, teste de verdade, e atualize PROGRESSO.md e CHANGELOG.md ao final."
+
+## Etapa 7 - Coleta e loot (escrita, 2026-11-14)
+- Recursos derivados do mapa (sem objetos novos): árvore = madeira (3 un.), muro das ruínas = pedra (3) ou sucata (2). Borda do mundo não rende nada.
+- `REQUEST_INTERACT {actionId}`: sem alvo e sem posição. O servidor usa a posição que ele conhece e escolhe: mochila mais próxima (alcance 56 px); senão o recurso mais próximo. 1 unidade por ação, recarga 600 ms.
+- Concorrência: o servidor guarda o que já foi retirado de cada recurso e atualiza na mesma chamada síncrona; inventário cheio não consome o recurso. Recurso mexido volta ao normal após 60 s sem toque.
+- Mochila de morte: ao morrer, `PlayerLife.lost` vira UMA mochila no local (`LootWorld.addDrop`); quem pega leva o que couber, o resto fica. Expira em 5 min (provisório), máx. 200 no mundo.
+- Protocolo 3: `ENTITY_UPDATE {drops, depleted}` (enviado ao mudar + a cada 2 s). Cliente: botão COLETAR, marca X em recurso esgotado, quadrado marrom em mochila.
+- Arquivos: `packages/shared/src/{loot.ts,loot.test.ts,items.ts,life.ts,protocol.ts,security.ts,index.ts,chunks.ts}`, `apps/server/src/rooms/WorldRoom.ts`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,ui/SurvivalUi.ts}`.
+- Verificado: 8 testes novos (2 jogadores no mesmo recurso = total 3; distância; respawn; inventário cheio; mochila conserva itens; expiração; id repetido/recarga/morto; campos extras).
+- NÃO verificado: servidor/cliente/bots rodando de verdade (sem `pnpm install` aqui); `survivor.ts`/`attacker.ts` não ganharam casos da Etapa 7; aparência do botão no celular.
+- NÃO feito: **inventário persistente** (exige identidade do jogador: conta/token; decisão em aberto) e "loot de edifícios" além de pedra/sucata nas ruínas. Baús ficam para depois.
+- Critério de aceite: workflow passar + 2 aparelhos coletando a mesma árvore sem passar de 3 madeiras no total.
