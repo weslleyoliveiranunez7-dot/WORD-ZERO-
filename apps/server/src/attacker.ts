@@ -1,7 +1,15 @@
 // Cliente MALICIOSO de teste (Etapa 5): tenta impor posicao, velocidade, mensagens invalidas e flood.
 // Cada ataque precisa FALHAR (o servidor ignora/recusa/expulsa). Sai com codigo 1 se algum ataque funcionar.
 import { Client, Room } from "colyseus.js";
-import { KICK_CODE, PLAYER_SPEED, PROTOCOL_VERSION, WORLD_ROOM_NAME, type WorldSnapshot } from "@worldzero/shared";
+import {
+  KICK_CODE,
+  PLAYER_SPEED,
+  PROTOCOL_VERSION,
+  WORLD_ROOM_NAME,
+  type InventoryUpdateMsg,
+  type PlayerStateMsg,
+  type WorldSnapshot,
+} from "@worldzero/shared";
 
 const url = process.env.SERVER_WS ?? "ws://localhost:2567";
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -26,6 +34,10 @@ async function main(): Promise<void> {
       track.push({ t: Date.now(), x: me.x, y: me.y });
     }
   });
+  let state: PlayerStateMsg | undefined;
+  let inv: InventoryUpdateMsg | undefined;
+  room.onMessage("PLAYER_STATE", (m: PlayerStateMsg) => (state = m));
+  room.onMessage("INVENTORY_UPDATE", (m: InventoryUpdateMsg) => (inv = m));
   room.onMessage("ACTION_REJECTED", (m: { reason: string }) => reasons.push(m.reason));
   room.onLeave((code) => {
     leftCode = code;
@@ -76,6 +88,53 @@ async function main(): Promise<void> {
   const walked = track.length > 0 ? dist(track[0], track[track.length - 1]) : 0;
   check("andou de verdade com input valido", walked > 20, `${walked.toFixed(0)} px`);
   check("velocidade nunca passa do maximo", worst <= PLAYER_SPEED * 1.15, `pior ${worst.toFixed(0)} px/s (max ${PLAYER_SPEED})`);
+
+  // 4b) Etapa 6: o cliente nao consegue inventar estado, itens, cura nem reaparecer vivo
+  while (!state || !inv) await sleep(50);
+  const total = (): number => inv!.slots.reduce((n, sl) => n + (sl ? sl.qty : 0), 0);
+  const items0 = total();
+  reasons.length = 0; // a partir daqui cada checagem so enxerga os motivos NOVOS
+  room.send("PLAYER_STATE", { health: 1e9, hunger: 1e9, thirst: 1e9, energy: 1e9, dead: false });
+  room.send("INVENTORY_UPDATE", { slots: [{ id: "canned_food", qty: 999 }] });
+  await sleep(1200);
+  check("cliente nao consegue impor PLAYER_STATE/INVENTORY_UPDATE", state!.health <= 100 && total() === items0, `vida ${state!.health}, itens ${total()}/${items0}`);
+  check("mensagens de estado enviadas pelo cliente recusadas", reasons.includes("tipo_desconhecido"), `motivos: ${[...new Set(reasons)].join(",")}`);
+
+  let aid = 1000;
+  reasons.length = 0;
+  room.send("REQUEST_USE_ITEM", { slot: 0, actionId: ++aid, id: "ouro", qty: 999, heal: 9999 });
+  await sleep(1100);
+  check("uso de item com campos extras recusado", reasons.includes("campos_extras") && total() === items0, `itens ${total()}/${items0}`);
+  reasons.length = 0;
+  for (const bad of [{ slot: -1, actionId: ++aid }, { slot: 99, actionId: ++aid }, { slot: 1.5, actionId: ++aid }, { slot: "0", actionId: ++aid }, { slot: 0, actionId: -4 }]) {
+    room.send("REQUEST_USE_ITEM", bad);
+  }
+  await sleep(1100);
+  check("slot/actionId invalidos recusados", reasons.includes("valores_invalidos") && total() === items0, `itens ${total()}/${items0}`);
+
+  reasons.length = 0;
+  room.send("REQUEST_RESPAWN", { actionId: ++aid });
+  await sleep(1100);
+  check("reaparecer estando vivo recusado", reasons.includes("vivo") && !state!.dead, `motivos: ${[...new Set(reasons)].join(",")}`);
+
+  // rajada de 15 usos do slot 0: so 1 pode ser consumido (cooldown no servidor)
+  const slot0 = inv!.slots[0];
+  const before0 = slot0 ? slot0.qty : 0;
+  for (let i = 0; i < 15; i++) room.send("REQUEST_USE_ITEM", { slot: 0, actionId: ++aid });
+  await sleep(1500);
+  const after0 = inv!.slots[0] ? inv!.slots[0]!.qty : 0;
+  check("rajada de usos consome no maximo 1 item (cooldown)", before0 - after0 <= 1, `slot 0: ${before0} -> ${after0}`);
+
+  // replay: repetir o mesmo actionId depois do cooldown nao consome de novo
+  const mid = total();
+  const replayId = ++aid;
+  room.send("REQUEST_USE_ITEM", { slot: 1, actionId: replayId });
+  await sleep(700);
+  const afterFirst = total();
+  room.send("REQUEST_USE_ITEM", { slot: 1, actionId: replayId });
+  await sleep(1500);
+  check("repetir o mesmo actionId nao consome duas vezes", afterFirst - total() === 0 && mid - afterFirst <= 1, `itens ${mid} -> ${afterFirst} -> ${total()}`);
+  await sleep(3000); // deixa a pontuacao de violacoes decair antes do flood
 
   // 5) flood: milhares de mensagens de uma vez
   for (let i = 0; i < 3000; i++) room.send("PLAYER_INPUT", { seq: ++seq, ix: 1, iy: 0 });
