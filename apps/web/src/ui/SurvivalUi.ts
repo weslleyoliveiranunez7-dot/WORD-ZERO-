@@ -11,7 +11,7 @@ const BARS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; col
   { key: "energy", label: "Energia", color: "#d8cf3a" },
 ];
 
-const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩" };
+const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏" };
 
 const div = (style: Partial<CSSStyleDeclaration>, parent?: HTMLElement): HTMLDivElement => {
   const el = document.createElement("div");
@@ -27,6 +27,7 @@ export class SurvivalUi {
   private fills = new Map<string, HTMLDivElement>();
   private values = new Map<string, HTMLSpanElement>();
   private warn: HTMLDivElement;
+  private weaponLine: HTMLDivElement;
   private grid: HTMLDivElement;
   private death: HTMLDivElement;
   private deathInfo: HTMLDivElement;
@@ -51,6 +52,7 @@ export class SurvivalUi {
       this.fills.set(b.key, fill);
       this.values.set(b.key, text);
     }
+    this.weaponLine = div({ marginTop: "2px", color: "#ffe9a8", textShadow: "0 0 3px #000", fontSize: "11px" }, bars);
     this.warn = div({ marginTop: "2px", color: "#ffb4b4", textShadow: "0 0 3px #000", fontSize: "11px" }, bars);
 
     // inventario: grade 4x3 no canto inferior direito (joystick fica no esquerdo)
@@ -95,6 +97,8 @@ export class SurvivalUi {
     else if (s.thirst < 20) msgs.push("Com muita sede");
     if (s.energy < 20) msgs.push("Exausto (mais lento)");
     this.warn.textContent = msgs.join(" | ");
+    // Etapa 9: so mostra a arma que o SERVIDOR usa (a de maior dano no inventario); o cliente nao escolhe.
+    this.weaponLine.textContent = `Arma: ${s.weapon ? (ITEMS[s.weapon]?.name ?? s.weapon) : "Punho"}`;
 
     if (s.dead) {
       const lost = s.lost.length ? s.lost.map((l) => `${l.qty}x ${ITEMS[l.id]?.name ?? l.id}`).join(", ") : "nada";
