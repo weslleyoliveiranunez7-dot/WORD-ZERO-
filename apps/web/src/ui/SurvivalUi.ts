@@ -1,101 +1,83 @@
-import { ITEMS, Inventory, RECIPES, RECIPE_IDS, missingFor, type InventoryUpdateMsg, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
+import { ITEMS, Inventory, RECIPES, RECIPE_IDS, missingFor, type InventoryUpdateMsg, type ItemCategory, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
 import { uiRoot } from "./landscape";
+import type { Services } from "./Services";
+import { C, CATEGORY_LABEL, actionButton, chip, describeItem, el, icon, itemName, norm, searchBox, setEnabled } from "./theme";
 
-// Etapa 6: barras de vida/fome/sede/energia, inventario e tela de morte (DOM, fora do canvas).
-// Esta classe SO MOSTRA o que o servidor mandou e devolve "intencoes" (usar slot, reaparecer).
-// Nada aqui calcula vida, fome ou itens.
+// Paineis de PERSONAGEM, INVENTARIO e FABRICACAO + barra de atalhos + tela de morte (DOM, fora do canvas).
+// Esta classe SO MOSTRA o que o servidor mandou e devolve "intencoes" (usar slot, fabricar, reaparecer).
+// Nada aqui calcula vida, fome, itens ou receitas: o servidor sempre refaz as contas.
 
-const BARS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; color: string }[] = [
-  { key: "health", label: "Vida", color: "#d64545" },
-  { key: "hunger", label: "Fome", color: "#d89a3a" },
-  { key: "thirst", label: "Sede", color: "#3a8fd8" },
-  { key: "energy", label: "Energia", color: "#d8cf3a" },
+const ATTRS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; icon: string; color: string; desc: string }[] = [
+  { key: "health", label: "Vida", icon: "❤", color: "#c9514a", desc: "Sua saude. Se chegar a 0 voce morre. Bandagens recuperam vida." },
+  { key: "hunger", label: "Fome", icon: "🍖", color: "#c28a3a", desc: "Necessidade de comida. Em 0 voce esta morrendo de fome. Coma para recuperar." },
+  { key: "thirst", label: "Sede", icon: "💧", color: "#4a8fc9", desc: "Necessidade de hidratacao. Em 0 voce esta morrendo de sede. Beba agua." },
+  { key: "energy", label: "Energia", icon: "⚡", color: "#c9be4a", desc: "Disposicao fisica. Abaixo de 20 voce fica exausto e mais lento." },
 ];
 
-const ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏", workbench: "🛠️", axe: "🪓", pickaxe: "⛏️", spear: "🔱" };
-
-const div = (style: Partial<CSSStyleDeclaration>, parent?: HTMLElement): HTMLDivElement => {
-  const el = document.createElement("div");
-  Object.assign(el.style, style);
-  parent?.appendChild(el);
-  return el;
-};
+const HOTBAR = 6; // os 6 primeiros slots da mochila (teclas 1 a 6); o inventario mostra todos
+const level = (v: number): string => (v <= 0 ? "CRITICO" : v < 20 ? "Baixo" : v < 60 ? "Atencao" : "Bom");
 
 export class SurvivalUi {
   onUse: (slot: number) => void = () => {};
   onRespawn: () => void = () => {};
-  onCraft: (recipe: RecipeId) => void = () => {}; // Etapa 10: so uma INTENCAO; o servidor confere ingredientes, bancada, espaco e tempo
+  onCraft: (recipe: RecipeId) => void = () => {}; // so uma INTENCAO; o servidor confere ingredientes, bancada, espaco e tempo
   private root: HTMLDivElement;
+  // personagem
   private fills = new Map<string, HTMLDivElement>();
   private values = new Map<string, HTMLSpanElement>();
-  private warn: HTMLDivElement;
-  private weaponLine: HTMLDivElement;
-  private grid: HTMLDivElement;
-  private craftBtn: HTMLButtonElement;
-  private craftPanel: HTMLDivElement;
-  private craftOpen = false;
+  private states = new Map<string, HTMLSpanElement>();
+  private bodyParts: SVGElement[] = [];
+  private bodyLabel!: HTMLDivElement;
+  private weaponLine!: HTMLDivElement;
+  private warn!: HTMLDivElement;
+  private weapon: string | null = null;
+  // inventario
+  private grid!: HTMLDivElement;
+  private detail!: HTMLDivElement;
+  private catRow!: HTMLDivElement;
+  private selSlot = -1;
+  private invCat: ItemCategory | "all" = "all";
+  private invQuery = "";
+  // fabricacao
+  private recList!: HTMLDivElement;
+  private recCatRow!: HTMLDivElement;
+  private recDetail!: HTMLDivElement;
+  private selRecipe: RecipeId = RECIPE_IDS[0];
+  private recCat: ItemCategory | "all" = "all";
+  private recQuery = "";
+  // barra de atalhos
+  private hotbar: HTMLDivElement;
+  private hotKey = "";
+  // morte
   private death: HTMLDivElement;
   private deathInfo: HTMLDivElement;
   private deathBtn: HTMLButtonElement;
   private slots: Slot[] = [];
   private invKey = "";
+  private dirty = new Set<string>();
   private respawnAt = 0; // performance.now() em que o botao libera
   private timer = 0;
 
-  constructor() {
-    this.root = div({ position: "fixed", inset: "0", pointerEvents: "none", zIndex: "15", font: "12px monospace", color: "#fff" });
+  constructor(private sv: Services) {
+    this.root = el("div", { position: "fixed", inset: "0", pointerEvents: "none", zIndex: "15", font: "12px monospace", color: C.text });
     uiRoot().appendChild(this.root);
 
-    // barras (abaixo do HUD de depuracao)
-    const bars = div({ position: "absolute", top: "40px", left: "8px", width: "150px", display: "flex", flexDirection: "column", gap: "3px" }, this.root);
-    for (const b of BARS) {
-      const row = div({ position: "relative", height: "14px", background: "rgba(0,0,0,0.55)", borderRadius: "3px", overflow: "hidden" }, bars);
-      const fill = div({ position: "absolute", left: "0", top: "0", bottom: "0", width: "100%", background: b.color }, row);
-      const text = document.createElement("span");
-      Object.assign(text.style, { position: "absolute", left: "4px", top: "0", lineHeight: "14px", fontSize: "11px", textShadow: "0 0 2px #000" });
-      row.appendChild(text);
-      this.fills.set(b.key, fill);
-      this.values.set(b.key, text);
-    }
-    this.weaponLine = div({ marginTop: "2px", color: "#ffe9a8", textShadow: "0 0 3px #000", fontSize: "11px" }, bars);
-    this.warn = div({ marginTop: "2px", color: "#ffb4b4", textShadow: "0 0 3px #000", fontSize: "11px" }, bars);
+    this.hotbar = el("div", { position: "absolute", left: "50%", bottom: "8px", transform: "translateX(-50%)", display: "flex", gap: "3px", pointerEvents: "auto", touchAction: "manipulation" }, this.root);
+    this.hotbar.dataset.ui = "hotbar";
 
-    // inventario: grade 4x3 no canto inferior direito (joystick fica no esquerdo)
-    this.grid = div(
-      { position: "absolute", right: "8px", bottom: "8px", display: "grid", gridTemplateColumns: "repeat(4, 46px)", gap: "4px", pointerEvents: "auto", touchAction: "manipulation" },
-      this.root,
-    );
-
-    this.grid.dataset.ui = "grid";
-
-    // Etapa 10: botao FABRICAR (abaixo das barras, lado esquerdo) e lista de receitas. So mostra; quem fabrica e o servidor.
-    this.craftBtn = document.createElement("button");
-    this.craftBtn.textContent = "FABRICAR";
-    this.craftBtn.dataset.ui = "craftbtn";
-    Object.assign(this.craftBtn.style, { position: "absolute", top: "170px", left: "8px", font: "bold 12px monospace", padding: "8px 12px", borderRadius: "6px", border: "2px solid #fff", background: "rgba(60,50,20,0.85)", color: "#fff", pointerEvents: "auto", touchAction: "manipulation" });
-    this.craftBtn.onclick = (): void => {
-      this.craftOpen = !this.craftOpen;
-      this.refreshCraft();
-    };
-    this.root.appendChild(this.craftBtn);
-    this.craftPanel = div(
-      { position: "absolute", top: "210px", left: "8px", width: "230px", maxHeight: "calc(100% - 330px)", overflowY: "auto", display: "none", flexDirection: "column", gap: "4px", padding: "6px", background: "rgba(0,0,0,0.75)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: "6px", pointerEvents: "auto", touchAction: "pan-y" },
-      this.root,
-    );
-
-    this.craftPanel.dataset.ui = "craftpanel";
+    this.buildCharacter(sv.body("character"));
+    this.buildInventory(sv.body("inventory"));
+    this.buildCraft(sv.body("craft"));
+    sv.onOpen((id) => {
+      if (id && this.dirty.delete(id)) this.refresh(id);
+    });
 
     // tela de morte
-    this.death = div(
-      { position: "absolute", inset: "0", display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", background: "rgba(40,0,0,0.78)", pointerEvents: "auto", textAlign: "center", padding: "16px" },
-      this.root,
-    );
-    div({ fontSize: "32px", fontWeight: "bold", color: "#ff6b6b" }, this.death).textContent = "VOCE MORREU";
-    this.deathInfo = div({ fontSize: "14px", maxWidth: "320px" }, this.death);
-    this.deathBtn = document.createElement("button");
-    Object.assign(this.deathBtn.style, { font: "bold 16px monospace", padding: "12px 24px", borderRadius: "6px", border: "2px solid #ff6b6b", background: "#300", color: "#fff" });
+    this.death = el("div", { position: "absolute", inset: "0", display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", background: "rgba(25,0,0,0.82)", pointerEvents: "auto", textAlign: "center", padding: "16px" }, this.root);
+    el("div", { fontSize: "32px", fontWeight: "bold", color: "#ff6b6b" }, this.death, "VOCE MORREU");
+    this.deathInfo = el("div", { fontSize: "14px", maxWidth: "320px" }, this.death);
+    this.deathBtn = el("button", { font: "bold 16px monospace", padding: "12px 24px", borderRadius: "6px", border: "2px solid #ff6b6b", background: "#300", color: "#fff" }, this.death);
     this.deathBtn.onclick = (): void => this.onRespawn();
-    this.death.appendChild(this.deathBtn);
 
     this.onKey = this.onKey.bind(this);
     window.addEventListener("keydown", this.onKey);
@@ -104,16 +86,69 @@ export class SurvivalUi {
   }
 
   private onKey(e: KeyboardEvent): void {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     const n = Number(e.key);
     if (Number.isInteger(n) && n >= 1 && n <= this.slots.length && !e.repeat) this.onUse(n - 1);
   }
 
-  setState(s: PlayerStateMsg): void {
-    for (const b of BARS) {
-      const v = s[b.key];
-      this.fills.get(b.key)!.style.width = `${Math.max(0, Math.min(100, v))}%`;
-      this.values.get(b.key)!.textContent = `${b.label} ${v}`;
+  // ---------- PERSONAGEM ----------
+  private buildCharacter(body: HTMLElement): void {
+    const row = el("div", { display: "flex", flexWrap: "wrap", gap: "12px" }, body);
+    const left = el("div", { flex: "0 0 96px", textAlign: "center" }, row);
+    el("div", { color: C.dim, fontSize: "10px", marginBottom: "4px" }, left, "CORPO");
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 60 120");
+    svg.setAttribute("width", "72");
+    svg.setAttribute("height", "144");
+    const part = (tag: string, a: Record<string, string>): void => {
+      const p = document.createElementNS(NS, tag);
+      for (const k in a) p.setAttribute(k, a[k]);
+      svg.appendChild(p);
+      this.bodyParts.push(p);
+    };
+    part("circle", { cx: "30", cy: "14", r: "10" });
+    part("rect", { x: "16", y: "27", width: "28", height: "44", rx: "6" });
+    part("rect", { x: "4", y: "29", width: "10", height: "40", rx: "5" });
+    part("rect", { x: "46", y: "29", width: "10", height: "40", rx: "5" });
+    part("rect", { x: "17", y: "73", width: "11", height: "44", rx: "5" });
+    part("rect", { x: "32", y: "73", width: "11", height: "44", rx: "5" });
+    left.appendChild(svg);
+    this.bodyLabel = el("div", { fontSize: "11px", fontWeight: "bold", marginTop: "2px" }, left);
+    el("div", { color: C.dim, fontSize: "9px", marginTop: "3px" }, left, "A cor mostra sua vida geral.");
+
+    const right = el("div", { flex: "1 1 190px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }, row);
+    for (const a of ATTRS) {
+      const card = el("div", { background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", padding: "6px" }, right);
+      const head = el("div", { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px" }, card);
+      el("span", { fontWeight: "bold" }, head, `${a.icon} ${a.label}`);
+      const val = el("span", {}, head);
+      const bar = el("div", { height: "9px", background: "#0b0e0b", border: `1px solid ${C.line}`, margin: "4px 0", position: "relative" }, card);
+      this.fills.set(a.key, el("div", { position: "absolute", left: "0", top: "0", bottom: "0", width: "100%", background: a.color }, bar));
+      this.values.set(a.key, val);
+      const st = el("span", { fontSize: "10px", fontWeight: "bold", color: C.dim }, card);
+      this.states.set(a.key, st);
+      el("div", { fontSize: "10px", color: C.dim, marginTop: "2px" }, card, a.desc);
     }
+    this.weaponLine = el("div", { color: C.warn }, right);
+    this.warn = el("div", { color: C.bad, fontSize: "11px" }, right);
+  }
+
+  setState(s: PlayerStateMsg): void {
+    for (const a of ATTRS) {
+      const v = Math.max(0, Math.min(100, s[a.key]));
+      this.fills.get(a.key)!.style.width = `${v}%`;
+      this.values.get(a.key)!.textContent = `${Math.round(v)} / 100`;
+      const st = this.states.get(a.key)!;
+      st.textContent = level(v);
+      st.style.color = v < 20 ? C.bad : v < 60 ? C.warn : C.ok;
+    }
+    const hp = s.health;
+    const col = hp < 30 ? "#b5483f" : hp < 60 ? "#b8913f" : "#5e8f58";
+    for (const p of this.bodyParts) p.setAttribute("fill", col);
+    this.bodyLabel.textContent = hp < 30 ? "Critico" : hp < 60 ? "Ferido" : "Saudavel";
+    this.bodyLabel.style.color = col;
     const msgs: string[] = [];
     if (s.hunger <= 0) msgs.push("Morrendo de fome!");
     else if (s.hunger < 20) msgs.push("Com muita fome");
@@ -121,68 +156,194 @@ export class SurvivalUi {
     else if (s.thirst < 20) msgs.push("Com muita sede");
     if (s.energy < 20) msgs.push("Exausto (mais lento)");
     this.warn.textContent = msgs.join(" | ");
-    // Etapa 9: so mostra a arma que o SERVIDOR usa (a de maior dano no inventario); o cliente nao escolhe.
-    this.weaponLine.textContent = `Arma: ${s.weapon ? (ITEMS[s.weapon]?.name ?? s.weapon) : "Punho"}`;
+    // so mostra a arma que o SERVIDOR usa (a de maior dano no inventario); o cliente nao escolhe.
+    this.weaponLine.textContent = `Arma: ${s.weapon ? itemName(s.weapon) : "Punho"}`;
+    if (s.weapon !== this.weapon) {
+      this.weapon = s.weapon ?? null;
+      this.renderHotbar();
+    }
 
     if (s.dead) {
-      const lost = s.lost.length ? s.lost.map((l) => `${l.qty}x ${ITEMS[l.id]?.name ?? l.id}`).join(", ") : "nada";
+      const lost = s.lost.length ? s.lost.map((l) => `${l.qty}x ${itemName(l.id)}`).join(", ") : "nada";
       this.deathInfo.textContent = `Itens perdidos: ${lost}.`;
       this.respawnAt = performance.now() + s.respawnInMs;
       this.death.style.display = "flex";
-      this.craftOpen = false;
-      this.refreshCraft();
+      this.sv.lock(true);
       this.refreshDeathButton();
     } else {
       this.death.style.display = "none";
+      this.sv.lock(false);
     }
+  }
+
+  // ---------- INVENTARIO ----------
+  private buildInventory(body: HTMLElement): void {
+    searchBox((q) => {
+      this.invQuery = norm(q);
+      this.renderInventory();
+    }, body);
+    this.catRow = el("div", { display: "flex", flexWrap: "wrap", gap: "4px", margin: "6px 0" }, body);
+    this.grid = el("div", { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", userSelect: "none" }, body);
+    this.detail = el("div", { marginTop: "8px", padding: "8px", background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", minHeight: "70px" }, body);
+  }
+
+  private matches(s: Slot): boolean {
+    if (!s) return false;
+    const def = ITEMS[s.id];
+    return (this.invCat === "all" || def?.category === this.invCat) && (!this.invQuery || norm(itemName(s.id)).includes(this.invQuery));
+  }
+
+  private renderInventory(): void {
+    if (!this.sv.isOpen("inventory")) return void this.dirty.add("inventory");
+    this.catRow.textContent = "";
+    const cats = new Set<ItemCategory>();
+    for (const s of this.slots) if (s && ITEMS[s.id]) cats.add(ITEMS[s.id].category);
+    if (this.invCat !== "all" && !cats.has(this.invCat)) this.invCat = "all";
+    chip("Todos", this.invCat === "all", () => ((this.invCat = "all"), this.renderInventory()), this.catRow);
+    for (const c of cats) chip(CATEGORY_LABEL[c], this.invCat === c, () => ((this.invCat = c), this.renderInventory()), this.catRow);
+
+    this.grid.textContent = "";
+    this.slots.forEach((s, i) => {
+      const on = this.matches(s);
+      const cell = el("div", { position: "relative", height: "46px", background: s ? C.bg3 : C.bg2, border: `1px solid ${i === this.selSlot ? C.lineHi : C.line}`, borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", opacity: s && !on ? "0.25" : "1" }, this.grid);
+      el("div", { position: "absolute", left: "3px", top: "1px", fontSize: "9px", color: C.dim }, cell, String(i + 1));
+      if (s) {
+        cell.appendChild(document.createTextNode(icon(s.id)));
+        el("div", { position: "absolute", right: "3px", bottom: "1px", fontSize: "11px", fontWeight: "bold" }, cell, String(s.qty));
+        cell.title = itemName(s.id);
+      }
+      cell.onclick = (): void => {
+        this.selSlot = i;
+        this.renderInventory();
+      };
+    });
+    this.renderDetail();
+  }
+
+  private renderDetail(): void {
+    const d = this.detail;
+    d.textContent = "";
+    const s = this.slots[this.selSlot];
+    if (this.selSlot < 0) return void el("div", { color: C.dim }, d, "Selecione um slot para ver o item.");
+    if (!s) return void el("div", { color: C.dim }, d, `Slot ${this.selSlot + 1} vazio.`);
+    const def = ITEMS[s.id];
+    el("div", { fontWeight: "bold", fontSize: "13px" }, d, `${icon(s.id)} ${itemName(s.id)}  x${s.qty}`);
+    if (def) {
+      el("div", { color: C.dim, fontSize: "10px", margin: "2px 0 5px" }, d, `${CATEGORY_LABEL[def.category]} | peso ${def.weight} kg cada | pilha ate ${def.maxStack}`);
+      el("div", { fontSize: "11px", marginBottom: "6px" }, d, describeItem(def));
+    }
+    const usable = !!def && Object.keys(def.effects).length > 0;
+    const b = actionButton(usable ? "USAR / CONSUMIR 1" : "NAO CONSUMIVEL", () => this.onUse(this.selSlot), d);
+    setEnabled(b, usable);
+    const hint = usable ? (this.selSlot < 9 ? `Atalho: tecla ${this.selSlot + 1}` : "") : "Este item nao e usado direto: serve para fabricar, construir ou como equipamento.";
+    if (hint) el("div", { color: C.dim, fontSize: "10px", marginTop: "4px" }, d, hint);
   }
 
   setInventory(m: InventoryUpdateMsg): void {
     const key = JSON.stringify(m.slots);
-    if (key === this.invKey) return; // o servidor reenvia a cada 2 s: so refaz a grade se mudou
+    if (key === this.invKey) return; // o servidor reenvia a cada 2 s: so refaz se mudou
     this.invKey = key;
     this.slots = m.slots;
-    this.grid.textContent = "";
-    m.slots.forEach((s, i) => {
-      const cell = div(
-        { position: "relative", width: "46px", height: "46px", background: s ? "rgba(30,40,30,0.85)" : "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "5px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", userSelect: "none" },
-        this.grid,
-      );
-      const key = div({ position: "absolute", left: "3px", top: "1px", fontSize: "9px", opacity: "0.7" }, cell);
-      key.textContent = String(i + 1);
-      if (s) {
-        cell.appendChild(document.createTextNode(ICON[s.id] ?? "?"));
-        const q = div({ position: "absolute", right: "3px", bottom: "1px", fontSize: "11px", fontWeight: "bold" }, cell);
-        q.textContent = String(s.qty);
-        cell.title = ITEMS[s.id]?.name ?? s.id;
-        cell.onclick = (): void => this.onUse(i);
-      }
-    });
-    this.refreshCraft();
+    this.renderHotbar();
+    this.renderInventory();
+    this.renderCraft();
   }
 
-  // Lista as receitas. Verde = parece que da (so para ajudar o jogador: o servidor sempre refaz a conta); cinza = falta algo.
-  private refreshCraft(): void {
-    this.craftPanel.style.display = this.craftOpen ? "flex" : "none";
-    if (!this.craftOpen) return;
+  // ---------- BARRA DE ATALHOS ----------
+  private renderHotbar(): void {
+    const key = this.invKey + "|" + this.weapon;
+    if (key === this.hotKey) return;
+    this.hotKey = key;
+    this.hotbar.textContent = "";
+    const wSlot = this.weapon ? this.slots.findIndex((s) => s?.id === this.weapon) : -1;
+    for (let i = 0; i < Math.min(HOTBAR, this.slots.length); i++) {
+      const s = this.slots[i];
+      const cell = el("div", { position: "relative", width: "36px", height: "36px", background: "rgba(14,17,14,0.85)", border: `1px solid ${i === wSlot ? C.lineHi : C.line}`, borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", boxShadow: i === wSlot ? `inset 0 0 0 1px ${C.lineHi}` : "none", userSelect: "none" }, this.hotbar);
+      el("div", { position: "absolute", left: "2px", top: "0", fontSize: "8px", color: C.dim }, cell, String(i + 1));
+      if (s) {
+        cell.appendChild(document.createTextNode(icon(s.id)));
+        el("div", { position: "absolute", right: "2px", bottom: "0", fontSize: "9px", fontWeight: "bold" }, cell, String(s.qty));
+        cell.title = itemName(s.id) + (i === wSlot ? " (arma em uso)" : "");
+        cell.onclick = (): void => this.onUse(i);
+      }
+    }
+  }
+
+  // ---------- FABRICACAO ----------
+  private buildCraft(body: HTMLElement): void {
+    const cols = el("div", { display: "flex", flexWrap: "wrap", gap: "10px" }, body);
+    const a1 = el("div", { flex: "1 1 150px", minWidth: "0" }, cols);
+    el("div", { fontWeight: "bold", marginBottom: "4px" }, a1, "1. RECEITAS");
+    searchBox((q) => {
+      this.recQuery = norm(q);
+      this.renderCraft();
+    }, a1);
+    this.recCatRow = el("div", { display: "flex", flexWrap: "wrap", gap: "4px", margin: "6px 0" }, a1);
+    this.recList = el("div", { display: "flex", flexDirection: "column", gap: "3px" }, a1);
+    this.recDetail = el("div", { flex: "1.4 1 200px", minWidth: "0" }, cols);
+  }
+
+  private renderCraft(): void {
+    if (!this.sv.isOpen("craft")) return void this.dirty.add("craft");
     const inv = new Inventory();
     this.slots.forEach((s, i) => {
       if (s && i < inv.slots.length) inv.slots[i] = { id: s.id, qty: s.qty };
     });
-    this.craftPanel.textContent = "";
+    const cats = [...new Set(RECIPE_IDS.map((id) => ITEMS[RECIPES[id].output.id].category))];
+    this.recCatRow.textContent = "";
+    chip("Todas", this.recCat === "all", () => ((this.recCat = "all"), this.renderCraft()), this.recCatRow);
+    for (const c of cats) chip(CATEGORY_LABEL[c], this.recCat === c, () => ((this.recCat = c), this.renderCraft()), this.recCatRow);
+
+    this.recList.textContent = "";
+    let shown = 0;
     for (const id of RECIPE_IDS) {
       const r = RECIPES[id];
-      const miss = missingFor(inv, id);
-      const row = div(
-        { padding: "6px", borderRadius: "5px", border: "1px solid rgba(255,255,255,0.3)", background: miss ? "rgba(40,40,40,0.8)" : "rgba(40,100,50,0.85)", opacity: miss ? "0.7" : "1", userSelect: "none" },
-        this.craftPanel,
-      );
-      const title = div({ fontWeight: "bold", fontSize: "12px" }, row);
-      title.textContent = `${ICON[r.output.id] ?? "?"} ${ITEMS[r.output.id].name}${r.output.qty > 1 ? ` x${r.output.qty}` : ""}`;
-      const need = div({ fontSize: "10px", marginTop: "2px" }, row);
-      need.textContent = r.inputs.map((i) => `${i.qty}x ${ITEMS[i.id].name} (${inv.count(i.id)})`).join(" + ") + (r.station ? ` | precisa de ${ITEMS[r.station].name}` : "");
-      row.onclick = (): void => this.onCraft(id); // sempre manda: o servidor responde se vale
+      const def = ITEMS[r.output.id];
+      if ((this.recCat !== "all" && def.category !== this.recCat) || (this.recQuery && !norm(def.name).includes(this.recQuery))) continue;
+      shown++;
+      const ok = !missingFor(inv, id);
+      const row = el("div", { display: "flex", alignItems: "center", gap: "6px", padding: "6px", borderRadius: "3px", border: `1px solid ${id === this.selRecipe ? C.lineHi : C.line}`, background: id === this.selRecipe ? C.bg3 : C.bg2, userSelect: "none" }, this.recList);
+      el("span", { fontSize: "16px" }, row, icon(r.output.id));
+      el("span", { flex: "1", fontSize: "11px" }, row, def.name);
+      el("span", { color: ok ? C.ok : C.dim, fontSize: "10px" }, row, ok ? "pronta" : "falta");
+      row.onclick = (): void => {
+        this.selRecipe = id;
+        this.renderCraft();
+      };
     }
+    if (!shown) el("div", { color: C.dim, fontSize: "11px" }, this.recList, "Nenhuma receita encontrada.");
+
+    const r = RECIPES[this.selRecipe];
+    const out = ITEMS[r.output.id];
+    const d = this.recDetail;
+    d.textContent = "";
+    el("div", { fontWeight: "bold", marginBottom: "4px" }, d, "2. MATERIAIS NECESSARIOS");
+    const mats = el("div", { display: "flex", flexDirection: "column", gap: "3px", marginBottom: "10px" }, d);
+    const lacks: string[] = [];
+    const line = (name: string, have: number, need: number, note = ""): void => {
+      const ok = have >= need;
+      const row = el("div", { display: "flex", gap: "6px", padding: "5px 6px", borderRadius: "3px", background: ok ? C.okBg : "rgba(150,60,50,0.25)", border: `1px solid ${ok ? "#3d6a39" : "#7a3b34"}` }, mats);
+      el("span", { color: ok ? C.ok : C.bad, fontWeight: "bold" }, row, ok ? "✔" : "✘");
+      el("span", { flex: "1", fontSize: "11px" }, row, name + note);
+      el("span", { color: ok ? C.ok : C.bad, fontSize: "11px" }, row, `${have}/${need}`);
+      if (!ok) lacks.push(need - have > 0 && note === "" ? `${need - have}x ${name}` : name);
+    };
+    for (const i of r.inputs) line(itemName(i.id), inv.count(i.id), i.qty);
+    if (r.station) line(itemName(r.station), inv.count(r.station), 1, " (precisa estar na mochila)");
+    el("div", { fontWeight: "bold", marginBottom: "4px" }, d, "3. RESULTADO");
+    const res = el("div", { padding: "6px", background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", marginBottom: "6px" }, d);
+    el("div", { fontWeight: "bold" }, res, `${icon(out.id)} ${out.name}  x${r.output.qty}`);
+    el("div", { fontSize: "10px", color: C.dim, margin: "2px 0" }, res, `Tempo de fabricacao: ${(r.craftMs / 1000).toFixed(1)}s`);
+    el("div", { fontSize: "11px" }, res, describeItem(out));
+    const can = lacks.length === 0;
+    const b = actionButton("FABRICAR", () => this.onCraft(this.selRecipe), d);
+    setEnabled(b, can);
+    if (!can) el("div", { color: C.bad, fontSize: "10px", marginTop: "4px" }, d, `Nao da para fabricar. Falta: ${lacks.join(", ")}.`);
+  }
+
+  private refresh(id: string): void {
+    if (id === "inventory") this.renderInventory();
+    else if (id === "craft") this.renderCraft();
   }
 
   private refreshDeathButton(): void {

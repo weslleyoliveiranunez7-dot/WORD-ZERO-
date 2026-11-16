@@ -8,18 +8,15 @@ const MIN_H = 320;
 const PORTRAIT_RATIO = 3 / 4; // altura / largura da area de jogo quando o celular esta em pe
 
 const CSS = `
-#ui.wz-compact [data-ui="grid"] { right: 204px !important; left: auto !important; bottom: 8px !important; grid-template-columns: repeat(6, 38px) !important; gap: 3px !important; }
-#ui.wz-compact [data-ui="grid"] > div { width: 38px !important; height: 38px !important; font-size: 18px !important; }
 #ui.wz-compact [data-ui="attack"] { right: 16px !important; bottom: 16px !important; }
 #ui.wz-compact [data-ui="collect"] { right: 16px !important; bottom: 100px !important; }
 #ui.wz-compact [data-ui="torch"] { right: 108px !important; bottom: 84px !important; }
 #ui.wz-compact [data-ui="usebtn"] { right: 108px !important; bottom: 16px !important; }
-#ui.wz-compact [data-ui="craftbtn"] { top: 150px !important; left: 8px !important; }
-#ui.wz-compact [data-ui="buildbtn"] { top: 150px !important; left: 108px !important; }
-#ui.wz-compact [data-ui="craftpanel"] { top: 34px !important; left: 170px !important; max-height: calc(100% - 150px) !important; }
-#ui.wz-compact [data-ui="buildpanel"] { top: 34px !important; left: 410px !important; width: 180px !important; max-height: calc(100% - 120px) !important; overflow-y: auto !important; }
+#ui.wz-compact [data-ui="svcbar"] { top: 28px !important; }
+#ui.wz-compact [data-ui="svcbar"] button { width: 30px !important; height: 30px !important; font-size: 15px !important; }
+#ui.wz-compact [data-ui="panel"] { top: 28px !important; left: 46px !important; width: min(400px, calc(100% - 200px)) !important; max-height: calc(100% - 74px) !important; }
+#ui.wz-compact [data-ui="hotbar"] > div { width: 32px !important; height: 32px !important; font-size: 16px !important; }
 #ui.wz-compact [data-ui="chest"] { top: 16px !important; max-height: calc(100% - 130px) !important; overflow-y: auto !important; }
-#ui.wz-compact [data-ui="toast"] { top: 34px !important; }
 #ui.wz-compact [data-ui="joy"] { width: 45% !important; height: 80% !important; }
 #ui > button, #ui > [data-ui="joy"] { pointer-events: auto; }
 `;
