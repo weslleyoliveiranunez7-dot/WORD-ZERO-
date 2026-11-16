@@ -37,6 +37,22 @@ Teste real pendente: abrir o jogo, levar mordida de zumbi, ver sangrar, usar ban
 Arquivos: novos `packages/shared/src/{injuries,injuries.test}.ts`; alterados `packages/shared/src/{items,crafting,mobs,survival,life,combat,persist,protocol,security,index}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/web/src/{ui/SurvivalUi.ts,ui/theme.ts,net/NetClient.ts,game/GameScene.ts}`, `PROGRESSO.md`, `CHANGELOG.md`. Fora do zip: nada. Apagados: nenhum.
 (Se o `verificar.yml` roda `survivor`/`attacker`: o teste "item sem efeito não é gasto" da bandagem continua valendo com vida cheia e sem ferida.)
 
+## EXTRA - Inventário 6.3 - 2026-11-16
+**Status: código escrito; 250 testes de `shared` passam (26 novos em `inventory.test.ts`, shim Node); typecheck de `shared` e de `SurvivalUi` limpos. Servidor Colyseus REAL, `survivor.ts`/`attacker.ts`/`duel.ts` e o painel no celular AINDA NÃO rodados.**
+Pedido do usuário (lista "6.3. INVENTÁRIO", não é a seção 6.3 do Documento Mestre): expandir o painel existente com slots, quantidade, peso por item, peso total, capacidade máxima, categorias, equipar, desequipar, usar, dividir pilha, mover, descartar, comparar equipamentos, durabilidade, descrição/atributos, filtros e busca.
+Já existia e foi mantido: grade de slots (12), quantidade, categorias, busca, usar. Novo:
+- `shared/inventory.ts`: `MAX_CARRY_WEIGHT` (25 kg, provisório), `Inventory(size, maxWeight)`, `totalWeight()`, `add(id, qty, dur?)` (devolve o que não coube por slot OU peso), `wear()`, `equippedSlot()`. `ItemStack` ganhou `dur` e `eq`. Só a mochila do jogador tem limite (baú = sem limite). `clear()` (morte) devolve com `dur` e sem `eq`.
+- `shared/items.ts`: `durability` e `equip` em porrete (40), lança (35), machado (50), picareta (50). Valores provisórios: balancear jogando.
+- `shared/invops.ts` (novo): `moveSlot` (vazio/juntar/trocar), `splitStack`, `discardSlot` (destrói), `equipSlot`, `unequip`, `applyInvOp`. Tudo ou nada.
+- `shared/itemInfo.ts` (novo): `ITEM_DESC` (descrição de cada item) e `compareStacks` (arma x arma: dano, alcance, recarga, dano/seg, durabilidade).
+- `shared/combat.ts`: `weaponSlot` e `bestWeapon`: equipado vale (ferramenta na mão = punho); sem equipado = a de maior dano (igual a antes). Golpe que acerta gasta a arma. `shared/life.ts`: `inventoryOp` (vivo, actionId novo, 120 ms), `wear`, `notices` (aviso de quebra), coleta com ferramenta gasta durabilidade. `shared/loot.ts`, `building.ts`, `persist.ts`: `dur`/`eq` passam por chão, baú e save (dado inválido é corrigido, não derruba o save).
+- Protocolo 10: `REQUEST_INVENTORY_MOVE` ganhou handler (`inspectInventoryMove` em `security.ts`, campos exatos por op), `INVENTORY_UPDATE.weight/maxWeight`.
+- Servidor (`WorldRoom.ts`): handler novo, desgaste ao bater em estrutura, envia avisos de quebra (`SERVER_NOTICE`) e o peso.
+- Cliente: `SurvivalUi.ts` (painel), `NetClient.ts` (`inventoryOp`, `onRejected`), `GameScene.ts` (liga tudo e mostra recusas como "Mochila cheia ou peso maximo atingido.").
+Decisões que tomei sem pergunta (mudar se não gostar): descartar DESTRÓI (não vira mochila no chão, evita lotar o mundo); a coleta com ferramenta continua valendo só por ter a ferramenta na mochila (equipar não é obrigatório); peso não deixa o personagem mais lento; slots continuam 12.
+Teste real pendente: abrir o inventário no celular, ver peso e slots, mover/juntar/trocar, dividir, equipar o porrete e bater em zumbi (durabilidade cai, E aparece no slot), esperar quebrar (aviso), descartar com confirmação, tentar pegar item com a mochila pesada (aviso), conferir que o painel cabe na tela do A04.
+Arquivos: novos `packages/shared/src/{invops,itemInfo,inventory.test}.ts`; alterados `packages/shared/src/{items,inventory,protocol,security,index,life,loot,building,combat,persist}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/web/src/{ui/SurvivalUi.ts,net/NetClient.ts,game/GameScene.ts}`, `PROGRESSO.md`, `CHANGELOG.md`. Fora do zip: nada. Apagados: nenhum.
+
 ## Regras que valem sempre (resumo do Documento Mestre)
 - Executar UMA etapa por vez; só avançar após teste e aprovação do usuário.
 - Servidor é autoritativo; cliente só envia intenções.

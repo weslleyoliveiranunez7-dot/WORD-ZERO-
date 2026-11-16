@@ -1,5 +1,14 @@
 # Changelog
 
+## Extra - Inventário 6.3 (2026-11-16)
+- **Peso**: cada item tem peso (já existia em `items.ts`); a mochila do jogador agora tem limite (`MAX_CARRY_WEIGHT` = 25 kg, provisório). Coleta, loot, baú e fabricação respeitam o limite (o que não cabe por peso ou por slot volta/fica onde estava). Baú não tem limite de peso. Save acima do peso carrega sem perder itens.
+- **Durabilidade**: porrete (40), lança (35), machado (50) e picareta (50), valores provisórios. Arma gasta 1 por golpe que acerta (jogador, criatura ou estrutura); ferramenta gasta 1 por coleta com bônus. Ao zerar o item quebra, some e o dono recebe "X quebrou!". A durabilidade viaja com o item (baú, mochila de morte, save).
+- **Equipar / desequipar**: itens `equip` (armas e ferramentas), um por vez. Equipado = arma usada no golpe (ferramenta na mão = punho). Sem nada equipado, vale a arma de maior dano, como antes.
+- **Organizar** (`REQUEST_INVENTORY_MOVE`, antes sem handler): mover (vazio / juntar / trocar), dividir pilha, descartar (destrói, não vai ao chão) — tudo no servidor, tudo-ou-nada, com `actionId` e intervalo mínimo.
+- **Painel** (cliente): barra de peso e slots, durabilidade e marca E nos slots, descrição e atributos, comparar com o equipado/em uso, botões USAR / EQUIPAR / MOVER / DIVIDIR / DESCARTAR (com confirmação), filtros (Todos, Equipado, Usáveis, categorias) e busca. Recusas úteis do servidor viram aviso na tela.
+- **Protocolo 10**: `INVENTORY_UPDATE.weight/maxWeight`, `ItemStack.dur/eq`, `REQUEST_INVENTORY_MOVE` com `op`. Cliente e servidor precisam subir juntos.
+- Verificado: 250 testes de `shared` (26 novos em `inventory.test.ts`), typecheck de `shared` e do painel. NÃO verificado: servidor Colyseus real, workflow, painel no celular.
+
 ## Extra - Sistema de saúde e ferimentos (2026-11-16)
 - **Ferimentos** (`shared/injuries.ts`): corte, perfuração, mordida, fratura, queimadura e contusão em 4 partes do corpo, com sangramento, infecção, dor e recuperação. Zumbis mordem/cortam, lança perfura, porrete/punho machuca; cabeça = mais grave, tronco = sangra mais.
 - **Efeitos**: pernas feridas deixam mais lento; braços feridos e dor enfraquecem o golpe; sangramento e infecção bloqueiam a regeneração e tiram vida; feridas cicatrizam sozinhas.
