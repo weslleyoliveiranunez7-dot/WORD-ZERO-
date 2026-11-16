@@ -195,7 +195,7 @@ export class GameScene extends Phaser.Scene {
       this.survivalUi = new SurvivalUi(this.services);
       this.collectUi = new CollectUi(this.services);
       this.collectUi.onCollect = () => this.net?.interact();
-      this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
+      this.survivalUi.onUse = (slot, part) => this.net?.useItem(slot, part);
       this.survivalUi.onRespawn = () => this.net?.respawn();
       this.survivalUi.onCraft = (recipe) => this.net?.craft(recipe);
       this.net.onPlayerState = (st) => {
