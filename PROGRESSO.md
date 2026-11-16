@@ -3,7 +3,10 @@
 > Se quem estava implementando (Claude) ficar sem tokens, outra IA pode continuar lendo ESTE arquivo + `docs/DOCUMENTO_MESTRE.txt`.
 > Atualize este arquivo ao final de CADA etapa.
 
-Última atualização: 2026-11-15
+Última atualização: 2026-11-16
+**Etapa 9.3 (Coleta) - código escrito; testes em `loot.test.ts` passam; ver `CHANGELOG.md`. Cliente (desenho dos recursos) e servidor real AINDA NÃO rodados.**
+**Etapa 9.6 (Cerâmica) - código escrito; 10 testes novos em `ceramics.test.ts` passam; ver `CHANGELOG.md`. Servidor real/cliente AINDA NÃO rodados.**
+**Etapa 9.4 (Açougue) - código escrito; 16 testes novos em `shared/src/butchery.test.ts` passam (executor mínimo), typecheck de `shared` OK. Servidor real e cliente no navegador AINDA NÃO rodados. Ver `CHANGELOG.md`.**
 Etapa atual: **Etapa 14 (Temporada de 7 dias e wipe) - código escrito; 6 testes novos de `shared` (189 no total, shim Node) e `seasoncheck.ts` (27 checagens OK com relógio acelerado e arquivos reais) passam; typecheck só contra stubs. Servidor Colyseus REAL com a sala fechando, `seasoncheck` contra PostgreSQL REAL e o cliente (HUD/lista) AINDA NÃO rodados (o workflow novo roda `seasoncheck` 2x: arquivos e Postgres).**
 (Etapa 13 anterior:) **Etapa 13 (Servidores e lista) - código escrito; 8 testes novos de `shared` passam (shim Node), a lógica do cadastro de mundos foi exercitada em Node e o typecheck foi feito só contra stubs de colyseus/phaser. Servidor Colyseus REAL, `worldcheck.ts` e o cliente (tela de servidores) AINDA NÃO rodados (o workflow novo roda `worldcheck`).**
 (Etapa 12 anterior:) **Etapa 12 (Banco e persistência) - código escrito; testes da camada de armazenamento (arquivos) e do executor de migrações passam aqui; PostgreSQL REAL, servidor Colyseus REAL e o teste de reinício AINDA NÃO rodados (o workflow novo roda tudo, com um Postgres de verdade).**

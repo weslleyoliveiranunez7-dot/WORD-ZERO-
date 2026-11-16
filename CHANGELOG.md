@@ -1,5 +1,35 @@
 # Changelog
 
+## Etapa 9.3 - Coleta (2026-11-16)
+- **Recursos de chão por região** (`nodeAt`/`FORAGE` em `loot.ts`, sorteio por tile com a seed: mesmo mundo = mesmos recursos): planície = fibra, ervas, frutas, plantas; floresta = cogumelos, ervas, frutas, fibra, plantas (mais denso); lago = fibra (juncos), plantas, ervas + argila na margem (9.6); ruínas = componentes, fibra + pedra e sucata dos muros. Área de nascimento (4 tiles) sem recursos. Respawn e esgotamento iguais aos recursos antigos (60 s).
+- **Itens novos**: fibra, planta silvestre (fome +8), fruta silvestre (fome +12, sede +10), cogumelo (fome +10), erva medicinal (vida +5), componentes, foice improvisada (40 usos).
+- **Ferramentas adequadas**: `HARVEST_TOOL` ganhou foice (fibra, planta, erva rendem 2) e picareta para componentes. Novo `HARVEST_NEEDS`: **componentes só se colhem com a picareta na mochila** (sem ela: recusa `falta_ferramenta`, nada é retirado). Frutas e cogumelos: à mão.
+- **Usos**: `Foice improvisada` (2 sucata + 1 madeira + 1 componentes), `Curativo de fibra` (3 fibra -> 2 curativos), `Pomada de ervas` (3 ervas + gordura -> antisséptico).
+- **Cliente**: recursos de chão desenhados no mapa (capim, ervas, frutas, cogumelos, componentes), voltam à grama limpa quando esgotados; painel de Coleta mostra fonte por região e ferramenta exigida. Protocolo 13.
+- Testes: 5 novos em `loot.test.ts`; os testes antigos de coleta passaram a escolher recurso ISOLADO (senão, esgotado o alvo, a coleta cai no vizinho). Todos os testes de `shared` passam (executor mínimo); typecheck de `shared` OK. NÃO verificado: servidor real, desenho no navegador/celular (desempenho de `nodeAt` ao desenhar chunks), balanceamento das densidades.
+
+## Etapa 9.6 - Cerâmica (2026-11-16)
+- **Argila**: nasce na margem dos lagos (tile de água encostado em chão firme, 4 por ponto, volta em 60 s como os outros recursos). Água funda não rende. Coleta pelo botão de coleta de sempre.
+- **Moldagem**: `Moldar pote` (3 argila -> pote cru), `Moldar tijolos` (2 argila -> 2 tijolos crus), `Moldar tijolos com cacos` (1 argila + 1 caco -> 2 crus).
+- **Secagem e queima**: cru -> `Secar` (6 s, sem forno) -> seco -> `Queimar` no forno (8 s, gasta 2 madeiras de lenha). Pote cru não vai ao forno.
+- **Fornos**: `Forno de barro` (6 argila + 4 pedra; fica na mochila, 12 kg) e `Forno de tijolos` (10 tijolos + 4 pedra + 4 argila, exige o forno de barro; 15 kg).
+- **Qualidade e resistência**: no forno de barro 20% das peças racham (perdem-se os ingredientes e saem cacos); no de tijolos só 5%, e só ele faz o `Jarro refinado` (30 usos contra 12 do `Jarro de barro`). Sorteio só no servidor (`craftItem(inv, id, rng)`), aviso "A peça rachou na queima!".
+- **Potes e recipientes**: o jarro é ferramenta reutilizável (gasta 1 de durabilidade por uso): `Conservar em jarro` (3 bifes + gordura + pano -> 5 carnes conservadas; refinado -> 6). Liga com o Açougue 9.4. Tijolos servem para o forno de tijolos.
+- `Recipe.fail` (chance + saída de falha). Tela de fabricação mostra o risco de rachar. Protocolo 12 (11 itens novos): cliente e servidor sobem juntos.
+- Verificado: 10 testes novos (`ceramics.test.ts`) + todos os de `shared` (executor mínimo, sem vitest/rede); typecheck de `shared`. NÃO verificado: servidor real, workflow, tela no navegador, balanceamento.
+- Limites: tijolos ainda não entram nas peças de construção (Etapa 11); forno é item da mochila, não estrutura no mapa; sem tempo real de secagem (a "espera" é o tempo da receita).
+
+## Etapa 9.4 - Açougue (2026-11-16)
+- **Processamento de carcaças**: o cervo agora deixa uma `Carcaça de cervo` (10 kg) em vez de carne. Na **Bancada de açougue** (`butcher_table`, na mochila, feita na bancada simples) com **Faca** (`knife`) e **Pano limpo**, `Processar carcaça` rende 3 carnes, 1 pele, 2 gorduras, 2 ossos e 2 tendões. Sem bancada, `Esfolar no campo` (só faca) rende 2 carnes **contaminadas** e 1 pele.
+- **Cortes de carne**: `Cortar bifes` (3 carne crua + pano -> 2 bifes + 1 gordura). Bife alimenta 25 (carne crua 15).
+- **Couro, pele, gordura, ossos e tendões**: `Curtir pele` (pele + gordura -> couro). Osso, tendão e couro viram a `Lança de osso` (dano 32, alcance 72, durabilidade 45). Gordura curte e conserva.
+- **Higiene**: o pano limpo (sucata + garrafa de água -> 2 panos) é gasto a cada processamento na bancada; sem higiene (campo) a carne sai contaminada: fome +10, **vida -12**.
+- **Conservação**: carne crua, bife e carcaça **apodrecem** na mochila (teste por minuto conectado: 5% por carne/bife, 4% por carcaça; viram carne contaminada; avisa o dono). `Conservar carne` (2 bifes + gordura + pano -> 2 carnes conservadas, fome +30, leve, nunca apodrece).
+- **Bancadas e ferramentas**: `Recipe` ganhou `tool` (precisa na mochila, gasta 1 de durabilidade por uso; faca = 30) e `extra` (subprodutos, na mesma transação tudo-ou-nada). Faca e pano não exigem bancada (sem círculo).
+- **Protocolo 11** (13 itens novos): cliente e servidor precisam subir juntos. Cliente: tela de fabricação mostra ferramenta e subprodutos; ícones novos.
+- Verificado: 16 testes novos (`butchery.test.ts`) + todos os testes de `shared` antigos (rodados com um executor mínimo no lugar do vitest, sem rede); typecheck de `shared`. NÃO verificado: servidor Colyseus real, workflow, tela no navegador/celular, balanceamento (valores provisórios).
+- Limites: carne em baú não apodrece; não há bancada de açougue como estrutura no mapa (é item da mochila, como a bancada simples); lobos/zumbis não deixam carcaça (só cervo).
+
 ## Extra - Inventário 6.3 (2026-11-16)
 - **Peso**: cada item tem peso (já existia em `items.ts`); a mochila do jogador agora tem limite (`MAX_CARRY_WEIGHT` = 25 kg, provisório). Coleta, loot, baú e fabricação respeitam o limite (o que não cabe por peso ou por slot volta/fica onde estava). Baú não tem limite de peso. Save acima do peso carrega sem perder itens.
 - **Durabilidade**: porrete (40), lança (35), machado (50) e picareta (50), valores provisórios. Arma gasta 1 por golpe que acerta (jogador, criatura ou estrutura); ferramenta gasta 1 por coleta com bônus. Ao zerar o item quebra, some e o dono recebe "X quebrou!". A durabilidade viaja com o item (baú, mochila de morte, save).
