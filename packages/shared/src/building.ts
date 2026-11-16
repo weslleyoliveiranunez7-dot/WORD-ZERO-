@@ -225,7 +225,7 @@ export class StructureWorld {
     const to = a.toChest ? r.top.items! : a.inv;
     const s = Number.isInteger(a.slot) ? from.slots[a.slot] : null;
     if (!s) return fail("slot_vazio");
-    const left = to.add(s.id, s.qty);
+    const left = to.add(s.id, s.qty, s.dur);
     const moved = s.qty - left;
     if (moved <= 0) return fail(a.toChest ? "bau_cheio" : "inventario_cheio");
     from.removeFromSlot(a.slot, moved);
@@ -371,7 +371,7 @@ export class StructureWorld {
             if (it === null) continue;
             const q = it as Record<string, unknown>;
             if (typeof q !== "object" || !isItemId(q.id) || typeof q.qty !== "number" || !Number.isInteger(q.qty) || q.qty <= 0) return null;
-            if (top.items.add(q.id as ItemId, q.qty) !== 0) return null;
+            if (top.items.add(q.id as ItemId, q.qty, typeof q.dur === "number" ? q.dur : undefined) !== 0) return null;
           }
         }
         tile.top = top;

@@ -3,6 +3,8 @@ import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
 import { BUILD_COOLDOWN_MS } from "./building";
 import { craftItem } from "./crafting";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
+import { applyInvOp } from "./invops";
+import type { InventoryMoveMsg } from "./protocol";
 import { InjurySim, type BodyPart, type DamageType } from "./injuries";
 import { ITEMS } from "./items";
 import { START_VITALS, SurvivalSim } from "./survival";
@@ -11,6 +13,7 @@ import { START_VITALS, SurvivalSim } from "./survival";
 // Logica pura (o relogio entra por parametro) para testar sem rede. O cliente nunca altera nada daqui.
 
 export const USE_COOLDOWN_MS = 500; // tempo minimo entre dois consumos
+export const INV_OP_COOLDOWN_MS = 120; // EXTRA 6.3: tempo minimo entre duas operacoes de organizar o inventario
 export const ATTACK_COOLDOWN_MS = 700; // tempo minimo entre dois golpes
 export const RESPAWN_DELAY_MS = 5000; // tempo minimo morto antes de poder reaparecer
 // Etapa 9: protecao CURTA contra outros jogadores logo apos reaparecer (evita matar quem acabou de nascer, em loop).
@@ -30,11 +33,13 @@ export class PlayerLife {
   deaths = 0;
   private lastActionId = -1;
   private lastUseMs = -Infinity;
+  private lastInvOpMs = -Infinity;
   private lastInteractMs = -Infinity;
   private lastAttackMs = -Infinity;
   private lastBuildMs = -Infinity;
   private craftBusyUntilMs = 0; // Etapa 10: ate quando a fabricacao em andamento ocupa o jogador
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
+  notices: string[] = []; // EXTRA 6.3: avisos pendentes para o dono (ex.: "Porrete quebrou"); o servidor esvazia e envia
   graceUntilMs = 0; // Etapa 9: ate quando o jogador esta protegido de OUTROS JOGADORES (so apos reaparecer)
   lastHit: { by: string; atMs: number } | null = null; // Etapa 9: ultimo jogador que causou dano (credito da morte)
 
@@ -101,6 +106,33 @@ export class PlayerLife {
     this.lastUseMs = nowMs;
     this.invVersion++;
     return { ok: true };
+  }
+
+  // EXTRA 6.3: mover / dividir / descartar / equipar / desequipar. Vivo, actionId novo, intervalo minimo; a regra fica em invops.
+  inventoryOp(msg: InventoryMoveMsg, nowMs: number): ActionResult {
+    if (this.dead) return fail("morto", 1);
+    if (!this.freshAction(msg.actionId)) return fail("acao_repetida", 0);
+    if (nowMs - this.lastInvOpMs < INV_OP_COOLDOWN_MS) return fail("em_recarga", 1);
+    const r = applyInvOp(this.inventory, msg);
+    if (!r.ok) return fail(r.reason, r.weight);
+    this.lastInvOpMs = nowMs;
+    this.invVersion++;
+    return { ok: true };
+  }
+
+  // EXTRA 6.3: gasta durabilidade de um item do inventario. Se quebrar, o item some e o dono recebe um aviso.
+  wear(slot: number, amount = 1): void {
+    const id = this.inventory.wear(slot, amount);
+    this.invVersion++;
+    if (id) this.notices.push(`${ITEMS[id].name} quebrou!`);
+  }
+
+  // EXTRA 6.3: gasta uma ferramenta usada na coleta (a equipada, se for ela; senao a primeira da mochila).
+  private wearTool(id: string): void {
+    const inv = this.inventory;
+    const eq = inv.equippedSlot();
+    const slot = eq >= 0 && inv.slots[eq]?.id === id ? eq : inv.slots.findIndex((s) => s?.id === id);
+    if (slot >= 0) this.wear(slot, 1);
   }
 
   // Etapa 8/9: autoriza UM golpe (vivo, id novo, fora de recarga). Quem acha o alvo e causa o dano e o servidor.
@@ -174,6 +206,7 @@ export class PlayerLife {
     if (!r.ok) return fail(r.reason, 0); // nada por perto / esgotado / cheio: so avisa, nao pune
     this.lastInteractMs = nowMs;
     this.invVersion++;
+    if (r.tool) this.wearTool(r.tool); // EXTRA 6.3: coletar com ferramenta gasta durabilidade
     return { ok: true };
   }
 

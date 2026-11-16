@@ -16,14 +16,28 @@ export interface EquippedWeapon extends WeaponStats {
   item: ItemId | null; // null = punho
 }
 
-// Arma usada no golpe: a de MAIOR DANO no inventario do servidor; sem arma, punho. Nao existe "equipar" vindo do cliente.
-export function bestWeapon(inv: Inventory): EquippedWeapon {
-  let best: EquippedWeapon = { ...FIST, item: null };
-  for (const s of inv.slots) {
+// Slot da arma usada no golpe (-1 = punho). EXTRA 6.3: se o jogador EQUIPOU algo, vale o equipado (ferramenta na mao = punho);
+// sem nada equipado, vale a de MAIOR DANO no inventario do servidor (como antes). O cliente so pede "equipar"; o servidor decide.
+export function weaponSlot(inv: Inventory): number {
+  const eq = inv.equippedSlot();
+  if (eq >= 0) return ITEMS[inv.slots[eq]!.id].weapon ? eq : -1;
+  let best = -1;
+  let bestDmg = FIST.damage;
+  inv.slots.forEach((s, i) => {
     const w = s ? ITEMS[s.id]?.weapon : undefined;
-    if (s && w && w.damage > best.damage) best = { ...w, item: s.id };
-  }
+    if (s && w && w.damage > bestDmg) {
+      best = i;
+      bestDmg = w.damage;
+    }
+  });
   return best;
+}
+
+export function bestWeapon(inv: Inventory): EquippedWeapon {
+  const i = weaponSlot(inv);
+  if (i < 0) return { ...FIST, item: null };
+  const id = inv.slots[i]!.id;
+  return { ...ITEMS[id].weapon!, item: id };
 }
 
 // Parede e arvore bloqueiam golpe; agua nao (da para acertar quem esta do outro lado de um riacho, dentro do alcance).
@@ -95,6 +109,7 @@ export function performAttack(
   nowMs: number,
   rng: () => number = Math.random,
 ): AttackOutcome {
+  const wslot = weaponSlot(attacker.life.inventory); // EXTRA 6.3: a arma desgasta a cada golpe que ACERTA
   const weapon = attacker.life.injuries.adjustWeapon(bestWeapon(attacker.life.inventory)); // bracos feridos/dor: menos dano, mais recarga
   const res = attacker.life.startAttack(actionId, nowMs, weapon.cooldownMs);
   if (!res.ok) return { res, events: [] };
@@ -114,10 +129,12 @@ export function performAttack(
     if (!victim || !victim.life.takeHit(weapon.damage, attacker.id, nowMs, { type: weapon.damageType ?? "blunt", rng })) {
       return { res, events: [{ kind: "miss", attacker: attacker.id, x: r1(attacker.x), y: r1(attacker.y) }] };
     }
+    if (wslot >= 0) attacker.life.wear(wslot, 1);
     return { res, events: [{ kind: "hit", attacker: attacker.id, victim: victim.id, x: r1(victim.x), y: r1(victim.y), damage: weapon.damage }] };
   }
 
   const hit = mobs.damage(t.mob, weapon.damage, nowMs, rng);
+  if (wslot >= 0) attacker.life.wear(wslot, 1);
   const events: CombatEventMsg[] = [{ kind: "hit", attacker: attacker.id, mobId: t.mob.id, x: r1(t.mob.x), y: r1(t.mob.y), damage: weapon.damage }];
   if (!hit.killed) return { res, events };
   events.push({ kind: "kill", attacker: attacker.id, mobId: t.mob.id, x: r1(t.mob.x), y: r1(t.mob.y) });

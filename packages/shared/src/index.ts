@@ -8,6 +8,8 @@ export * from "./security";
 export * from "./playersim";
 export * from "./items";
 export * from "./inventory";
+export * from "./invops";
+export * from "./itemInfo";
 export * from "./survival";
 export * from "./injuries";
 export * from "./life";

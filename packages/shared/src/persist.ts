@@ -1,4 +1,4 @@
-import { INVENTORY_SLOTS, Inventory, type Slot } from "./inventory";
+import { INVENTORY_SLOTS, MAX_CARRY_WEIGHT, Inventory, type ItemStack, type Slot } from "./inventory";
 import { InjurySim, type InjurySave } from "./injuries";
 import { ITEMS, isItemId } from "./items";
 import type { PlayerLife } from "./life";
@@ -53,9 +53,14 @@ export function parseSave(raw: unknown): PlayerSave | null {
       continue;
     }
     if (typeof s !== "object" || s === undefined) return null;
-    const { id, qty } = s as Record<string, unknown>;
+    const { id, qty, dur, eq } = s as Record<string, unknown>;
     if (!isItemId(id) || typeof qty !== "number" || !Number.isInteger(qty) || qty < 1 || qty > ITEMS[id].maxStack) return null;
-    slots.push({ id, qty });
+    // EXTRA 6.3: durabilidade e "equipado" invalidos nao derrubam o save: a durabilidade volta cheia, o equipado e ignorado.
+    const st: ItemStack = { id, qty };
+    const max = ITEMS[id].durability;
+    if (max && typeof dur === "number" && Number.isInteger(dur) && dur >= 1) st.dur = Math.min(dur, max);
+    if (eq === true && ITEMS[id].equip && !slots.some((o) => o?.eq)) st.eq = true;
+    slots.push(st);
   }
   while (slots.length < INVENTORY_SLOTS) slots.push(null);
   const out: PlayerSave = { v: SAVE_VERSION, health, hunger, thirst, energy, slots };
@@ -75,9 +80,9 @@ export function parseSave(raw: unknown): PlayerSave | null {
 // Aplica o save a um PlayerLife recem-criado.
 export function applySave(life: PlayerLife, save: PlayerSave): void {
   life.survival = new SurvivalSim({ health: save.health, hunger: save.hunger, thirst: save.thirst, energy: save.energy });
-  const inv = new Inventory();
+  const inv = new Inventory(INVENTORY_SLOTS, MAX_CARRY_WEIGHT); // slots entram direto: save acima do peso nao perde itens
   save.slots.forEach((s, i) => {
-    inv.slots[i] = s ? { id: s.id, qty: s.qty } : null;
+    inv.slots[i] = s ? { id: s.id, qty: s.qty, ...(s.dur !== undefined ? { dur: s.dur } : {}), ...(s.eq ? { eq: true as const } : {}) } : null;
   });
   life.inventory = inv;
   life.injuries = InjurySim.restore(save.inj);

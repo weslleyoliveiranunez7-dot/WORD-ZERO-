@@ -45,7 +45,7 @@ export interface LootDrop {
   expiresAtMs: number;
 }
 
-export type LootResult = { ok: true; gained: ItemStack[] } | { ok: false; reason: string };
+export type LootResult = { ok: true; gained: ItemStack[]; tool?: ItemId } | { ok: false; reason: string }; // tool: ferramenta usada na coleta (gasta durabilidade)
 
 export class LootWorld {
   private taken = new Map<string, { qty: number; lastMs: number }>();
@@ -64,7 +64,7 @@ export class LootWorld {
 
   // Cria a mochila de morte (ou qualquer loot). Se passar do limite, descarta a mais antiga.
   addDrop(x: number, y: number, items: ItemStack[], nowMs: number): LootDrop | null {
-    const copy = items.filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty }));
+    const copy = items.filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty, ...(s.dur !== undefined ? { dur: s.dur } : {}) }));
     if (copy.length === 0) return null;
     if (this.drops.size >= MAX_DROPS) {
       const oldest = this.drops.keys().next().value;
@@ -96,9 +96,9 @@ export class LootWorld {
     const gained: ItemStack[] = [];
     const left: ItemStack[] = [];
     for (const s of d.items) {
-      const rest = inv.add(s.id, s.qty);
+      const rest = inv.add(s.id, s.qty, s.dur);
       if (s.qty - rest > 0) gained.push({ id: s.id, qty: s.qty - rest });
-      if (rest > 0) left.push({ id: s.id, qty: rest });
+      if (rest > 0) left.push({ id: s.id, qty: rest, ...(s.dur !== undefined ? { dur: s.dur } : {}) });
     }
     if (gained.length === 0) return { ok: false, reason: "inventario_cheio" };
     d.items = left; // o que nao coube continua no chao
@@ -140,7 +140,7 @@ export class LootWorld {
     const k = `${best.tx},${best.ty}`;
     this.taken.set(k, { qty: (this.taken.get(k)?.qty ?? 0) + want, lastMs: nowMs });
     this.version++;
-    return { ok: true, gained: [{ id: best.def.item, qty: want }] };
+    return { ok: true, gained: [{ id: best.def.item, qty: want }], ...(tool && inv.count(tool) > 0 ? { tool } : {}) };
   }
 
   // Expira mochilas e devolve recursos ao normal.

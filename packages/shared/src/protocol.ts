@@ -7,7 +7,7 @@ import { WORLD_ID_PATTERN } from "./servers";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 9; // 9 = ferimentos (PLAYER_STATE.body/injuries/pain/bleeding, REQUEST_USE_ITEM.part); 8 = 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 10; // 10 = inventario (REQUEST_INVENTORY_MOVE com op, INVENTORY_UPDATE.weight/maxWeight, ItemStack.dur/eq); 9 = ferimentos (PLAYER_STATE.body/injuries/pain/bleeding, REQUEST_USE_ITEM.part); 8 = 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -132,7 +132,19 @@ export interface PlayerStateMsg {
 
 export interface InventoryUpdateMsg {
   slots: Slot[];
+  weight?: number; // EXTRA 6.3: peso carregado (kg), calculado pelo servidor
+  maxWeight?: number; // limite de peso da mochila (kg)
 }
+
+// EXTRA 6.3: organizar o inventario. O cliente so diz a operacao e os slots/quantidade; o servidor confere tudo.
+// Usar item continua em REQUEST_USE_ITEM. "discard" destroi as unidades (nao vira loot).
+export type InventoryIntent =
+  | { op: "move"; from: number; to: number } // slot vazio = muda de lugar; mesmo item = junta; outro item = troca
+  | { op: "split"; slot: number; qty: number } // tira qty da pilha para um slot livre
+  | { op: "discard"; slot: number; qty: number }
+  | { op: "equip"; slot: number }
+  | { op: "unequip" };
+export type InventoryMoveMsg = InventoryIntent & { actionId: number };
 
 // Acoes do cliente (cliente -> servidor). actionId e crescente por cliente: repetir um id nao repete a acao.
 export interface UseItemMsg {

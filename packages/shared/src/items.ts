@@ -39,11 +39,13 @@ export interface ItemDef {
   id: ItemId;
   name: string;
   category: ItemCategory;
-  weight: number; // kg (ainda nao limita nada; entra com a regra de peso)
+  weight: number; // kg (EXTRA 6.3: soma limitada por MAX_CARRY_WEIGHT na mochila do jogador)
   maxStack: number;
   effects: VitalEffects; // efeito de CONSUMIR 1 unidade
   medical?: MedicalEffects; // Etapa 6b: se existir, trata ferimentos ao ser usado
   weapon?: WeaponStats; // Etapa 9: se existir, o item e arma (usada automaticamente: a de maior dano no inventario)
+  durability?: number; // EXTRA 6.3: usos ate quebrar (so itens que nao empilham). Ausente = nao se desgasta
+  equip?: boolean; // EXTRA 6.3: pode ser equipado na mao (arma ou ferramenta)
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -57,13 +59,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   stone: { id: "stone", name: "Pedra", category: "resource", weight: 1.5, maxStack: 10, effects: {} },
   scrap: { id: "scrap", name: "Sucata", category: "resource", weight: 0.8, maxStack: 10, effects: {} },
   // Etapa 9: primeira arma (corpo a corpo). Valores provisorios, balancear depois de jogar.
-  club: { id: "club", name: "Porrete", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 20, reach: 52, cooldownMs: 800 } },
+  club: { id: "club", name: "Porrete", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 20, reach: 52, cooldownMs: 800 }, durability: 40, equip: true },
   // Etapa 10: itens fabricaveis. Valores provisorios. Ferramentas NAO sao armas: servem para coletar (ver HARVEST_TOOL em loot.ts).
   workbench: { id: "workbench", name: "Bancada simples", category: "tool", weight: 8, maxStack: 1, effects: {} }, // estacao: precisa estar no inventario (nao e gasta)
-  axe: { id: "axe", name: "Machado improvisado", category: "tool", weight: 2, maxStack: 1, effects: {} }, // arvore rende 2 madeiras por coleta
-  pickaxe: { id: "pickaxe", name: "Picareta simples", category: "tool", weight: 2.5, maxStack: 1, effects: {} }, // pedra/sucata rendem 2 por coleta
+  axe: { id: "axe", name: "Machado improvisado", category: "tool", weight: 2, maxStack: 1, effects: {}, durability: 50, equip: true }, // arvore rende 2 madeiras por coleta
+  pickaxe: { id: "pickaxe", name: "Picareta simples", category: "tool", weight: 2.5, maxStack: 1, effects: {}, durability: 50, equip: true }, // pedra/sucata rendem 2 por coleta
   torch: { id: "torch", name: "Tocha", category: "tool", weight: 0.5, maxStack: 3, effects: {} }, // ilumina a noite (a luz e so desenho no cliente)
-  spear: { id: "spear", name: "Lanca", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 28, reach: 72, cooldownMs: 900, damageType: "pierce" } },
+  spear: { id: "spear", name: "Lanca", category: "weapon", weight: 2, maxStack: 1, effects: {}, weapon: { damage: 28, reach: 72, cooldownMs: 900, damageType: "pierce" }, durability: 35, equip: true },
   // Etapa 6b: suprimentos medicos. Curativo/tala/kit sao fabricaveis; analgesico, antibiotico e antisseptico so por loot.
   dressing: { id: "dressing", name: "Curativo", category: "medical", weight: 0.05, maxStack: 10, effects: {}, medical: { bleed: "light", dress: true } },
   splint: { id: "splint", name: "Tala", category: "medical", weight: 0.6, maxStack: 3, effects: {}, medical: { splint: true } },

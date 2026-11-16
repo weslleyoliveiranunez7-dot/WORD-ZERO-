@@ -1,7 +1,7 @@
 import { isPieceKind } from "./building";
 import { isRecipeId } from "./crafting";
 import { isBodyPart } from "./injuries";
-import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type TorchMsg, type UseItemMsg } from "./protocol";
+import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type TorchMsg, type UseItemMsg, type InventoryMoveMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
 
@@ -86,6 +86,41 @@ export function inspectUseItem(raw: unknown, slots: number): ActionInspection<Us
   if (part === undefined) return { msg: { slot, actionId } };
   if (!isBodyPart(part)) return { msg: null, reason: "valores_invalidos", weight: 3 };
   return { msg: { slot, actionId, part } };
+}
+
+// EXTRA 6.3: REQUEST_INVENTORY_MOVE. Cada op aceita SO os campos dela (qualquer campo a mais = violacao).
+const INV_FIELDS: Record<string, string[]> = {
+  move: ["op", "actionId", "from", "to"],
+  split: ["op", "actionId", "slot", "qty"],
+  discard: ["op", "actionId", "slot", "qty"],
+  equip: ["op", "actionId", "slot"],
+  unequip: ["op", "actionId"],
+};
+export function inspectInventoryMove(raw: unknown, slots: number): ActionInspection<InventoryMoveMsg> {
+  const bad = inspectKeys(raw, ["op", "actionId", "from", "to", "slot", "qty"]);
+  if (bad) return { msg: null, ...bad };
+  const r = raw as Record<string, unknown>;
+  const allowed = typeof r.op === "string" && Object.prototype.hasOwnProperty.call(INV_FIELDS, r.op) ? INV_FIELDS[r.op] : null;
+  if (!allowed) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  if (Object.keys(r).some((k) => !allowed.includes(k))) return { msg: null, reason: "campos_extras", weight: 5 };
+  if (!isInt(r.actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  const actionId = r.actionId;
+  const maxQty = 1000;
+  switch (r.op) {
+    case "move":
+      if (!isInt(r.from, 0, slots - 1) || !isInt(r.to, 0, slots - 1)) break;
+      return { msg: { op: "move", actionId, from: r.from, to: r.to } };
+    case "split":
+    case "discard":
+      if (!isInt(r.slot, 0, slots - 1) || !isInt(r.qty, 1, maxQty)) break;
+      return { msg: { op: r.op, actionId, slot: r.slot, qty: r.qty } };
+    case "equip":
+      if (!isInt(r.slot, 0, slots - 1)) break;
+      return { msg: { op: "equip", actionId, slot: r.slot } };
+    case "unequip":
+      return { msg: { op: "unequip", actionId } };
+  }
+  return { msg: null, reason: "valores_invalidos", weight: 3 };
 }
 
 // REQUEST_TORCH so aceita { on: boolean }.
