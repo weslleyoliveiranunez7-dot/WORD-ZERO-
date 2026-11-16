@@ -16,7 +16,7 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     this.title = this.add
-      .text(0, 0, `${GAME_NAME}\nEtapa 4 - Multiplayer (protocolo v${PROTOCOL_VERSION})`, {
+      .text(0, 0, `${GAME_NAME}\nEtapa 13 - Servidores (protocolo v${PROTOCOL_VERSION})`, {
         fontFamily: "sans-serif",
         fontSize: "26px",
         color: "#d8e6d0",
@@ -47,7 +47,7 @@ export class BootScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-    this.onlineButton.on("pointerdown", () => this.scene.start("GameScene", { online: true }));
+    this.onlineButton.on("pointerdown", () => this.scene.start("ServerListScene")); // Etapa 13: escolhe o servidor (mundo) na lista
 
     this.layout();
     this.scale.on("resize", this.onResize);

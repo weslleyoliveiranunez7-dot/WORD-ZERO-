@@ -22,7 +22,7 @@ import {
 import { Hud } from "../ui/Hud";
 import { uiRoot } from "../ui/landscape";
 import { Minimap } from "../ui/Minimap";
-import { NetClient } from "../net/NetClient";
+import { NetClient, type WorldChoice } from "../net/NetClient";
 import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 import { SurvivalUi } from "../ui/SurvivalUi";
@@ -57,6 +57,7 @@ export class GameScene extends Phaser.Scene {
   private minimap!: Minimap;
   // rede (so no modo online)
   private net?: NetClient;
+  private worldName = ""; // Etapa 13: servidor escolhido na lista (vazio = servidor padrao)
   private snaps = new SnapshotBuffer();
   private remotes = new Map<string, Phaser.GameObjects.Image>();
   private synced = false;
@@ -107,7 +108,7 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
-  create(data?: { online?: boolean }): void {
+  create(data?: { online?: boolean; world?: WorldChoice }): void {
     this.world = new ChunkedWorld();
     this.pos = { ...this.world.spawn };
     this.syncChunks();
@@ -162,7 +163,8 @@ export class GameScene extends Phaser.Scene {
     this.hasTorch = !data?.online; // online: so com uma tocha no inventario (fabricada); offline: sempre, para testar
     this.refreshTorchBtn();
     if (data?.online) {
-      this.net = new NetClient(getServerUrl());
+      this.worldName = data.world?.name ?? "";
+      this.net = new NetClient(getServerUrl(), data.world);
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
       this.survivalUi = new SurvivalUi();
       this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
@@ -231,7 +233,11 @@ export class GameScene extends Phaser.Scene {
         this.chestAt = { tx: m.tx, ty: m.ty };
         this.buildUi?.setChest(m);
       };
-      this.net.connect().catch(() => undefined); // o erro fica em net.lastError e aparece no HUD
+      this.net.connect().catch(() => {
+        // o erro fica em net.lastError e aparece no HUD. Servidor lotado: volta para a lista (com aviso) para escolher outro.
+        const net = this.net;
+        if (net?.lastErrorFull && data.world) this.time.delayedCall(1200, () => this.scene.start("ServerListScene", { notice: `${data.world?.name ?? "Servidor"} esta lotado. Escolha outro.` }));
+      });
     }
     this.minimap = new Minimap(this.world);
 
@@ -389,7 +395,7 @@ export class GameScene extends Phaser.Scene {
       const fps = Math.round(this.game.loop.actualFps);
       const cx = Math.floor(tx / CHUNK_SIZE);
       const cy = Math.floor(ty / CHUNK_SIZE);
-      const net = this.net ? ` | ${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
+      const net = this.net ? ` | ${this.worldName ? this.worldName + " " : ""}${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
       this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}`);
       this.minimap.update(this.pos.x, this.pos.y);
       if (this.clockEl && this.dayNight) {
