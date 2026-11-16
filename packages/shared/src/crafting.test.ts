@@ -52,6 +52,12 @@ describe("receitas (Etapa 10)", () => {
         expect(i.qty).toBeGreaterThan(0);
       }
       if (r.station) expect(ITEM_IDS).toContain(r.station);
+      if (r.tool) expect(ITEM_IDS).toContain(r.tool);
+      for (const x of r.extra ?? []) {
+        expect(ITEM_IDS).toContain(x.id);
+        expect(x.qty).toBeGreaterThan(0);
+        expect(x.qty).toBeLessThanOrEqual(ITEMS[x.id].maxStack);
+      }
     }
   });
 
@@ -207,8 +213,10 @@ describe("PlayerLife.craft (idempotencia, tempo, morte)", () => {
       for (const [rid, n] of made) {
         const rc = RECIPES[rid as keyof typeof RECIPES];
         for (const i of rc.inputs) if (i.id === id) expected -= i.qty * n;
-        if (rc.output.id === id) expected += rc.output.qty * n;
+        for (const o of [rc.output, ...(rc.extra ?? [])]) if (o.id === id) expected += o.qty * n;
+        if (rc.tool === id) expected += 0; // ferramenta nao e consumida (so quebra: contado abaixo)
       }
+      if (id === "knife") expected -= l.notices.filter((t) => t.startsWith("Faca")).length; // faca quebrada some
       expect(l.inventory.count(id)).toBe(expected);
     }
     for (const s of l.inventory.slots) {

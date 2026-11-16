@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ChunkedWorld, DROP_TTL_MS, HARVEST_COOLDOWN_MS, Inventory, LootWorld, NODE_RESPAWN_MS, PlayerLife, nodeAt, inspectInteract } from "./index";
+import { ChunkedWorld, craftItem, DROP_TTL_MS, HARVEST_COOLDOWN_MS, Inventory, LootWorld, NODE_RESPAWN_MS, PlayerLife, nodeAt, inspectInteract } from "./index";
 
 const world = new ChunkedWorld();
 
+// Recurso ISOLADO (nenhum outro ao alcance): senao, esgotado ele, a coleta cai no vizinho (9.3: ha recursos de chao por toda parte).
 function findNode(item: string): { tx: number; ty: number } {
-  for (let ty = 1; ty < world.height - 1; ty++) for (let tx = 1; tx < world.width - 1; tx++) if (nodeAt(world, tx, ty)?.item === item) return { tx, ty };
+  for (let ty = 3; ty < world.height - 3; ty++)
+    for (let tx = 3; tx < world.width - 3; tx++) {
+      if (nodeAt(world, tx, ty)?.item !== item) continue;
+      let alone = true;
+      for (let dy = -2; dy <= 2 && alone; dy++) for (let dx = -2; dx <= 2; dx++) if ((dx || dy) && Math.hypot(dx, dy) <= 1.8 && nodeAt(world, tx + dx, ty + dy)) alone = false;
+      if (alone) return { tx, ty };
+    }
   throw new Error("sem recurso " + item);
 }
 // posicao do jogador = centro do tile (o servidor aqui so mede distancia; garante que este e o alvo mais proximo)
@@ -92,5 +99,59 @@ describe("coleta (Etapa 7)", () => {
   it("inspectInteract rejeita campos extras", () => {
     expect(inspectInteract({ actionId: 1 }).msg).toEqual({ actionId: 1 });
     expect(inspectInteract({ actionId: 1, x: 5 }).msg).toBeNull();
+  });
+});
+
+describe("9.3 Coleta: recursos por regiao e ferramentas", () => {
+  const regionOf = (tx: number, ty: number) => world.getChunk(Math.floor(tx / 16), Math.floor(ty / 16))!.region;
+  it("cada regiao rende o que deve e so isso (fibra/ervas/frutas/cogumelos/componentes)", () => {
+    const seen: Record<string, Set<string>> = {};
+    for (let ty = 1; ty < world.height - 1; ty++)
+      for (let tx = 1; tx < world.width - 1; tx++) {
+        if (world.tileAt(tx, ty) !== "grass") continue;
+        const n = nodeAt(world, tx, ty);
+        if (n) (seen[regionOf(tx, ty)] ??= new Set()).add(n.item);
+      }
+    expect([...seen.forest ?? []].sort()).toEqual(["fiber", "fruit", "herb", "mushroom", "plant"]);
+    expect(seen.ruins?.has("components")).toBe(true);
+    expect(seen.plains?.has("mushroom") ?? false).toBe(false); // cogumelo e do bosque
+    expect(seen.plains?.has("components") ?? false).toBe(false);
+    expect(seen.forest?.has("components") ?? false).toBe(false);
+  });
+  it("area de nascimento sem recursos de chao", () => {
+    const s = world.spawnTile;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) if (Math.hypot(dx, dy) < 4 && world.tileAt(s.x + dx, s.y + dy) === "grass") expect(nodeAt(world, s.x + dx, s.y + dy)).toBeNull();
+  });
+  it("fibra: sem foice rende 1, com foice 2", () => {
+    const n = findNode("fiber");
+    const pos = near(n);
+    const a = new Inventory();
+    const r1 = new LootWorld().interact(world, a, pos.x, pos.y, 0);
+    expect(r1.ok && r1.gained[0]).toEqual({ id: "fiber", qty: 1 });
+    const b = new Inventory();
+    b.add("sickle", 1);
+    const r2 = new LootWorld().interact(world, b, pos.x, pos.y, 0);
+    expect(r2.ok && r2.gained[0]).toEqual({ id: "fiber", qty: 2 });
+    expect(r2.ok && r2.tool).toBe("sickle");
+  });
+  it("componentes exigem picareta: sem ela nada e retirado", () => {
+    const n = findNode("components");
+    const pos = near(n);
+    const loot = new LootWorld();
+    const a = new Inventory();
+    expect(loot.interact(world, a, pos.x, pos.y, 0)).toEqual({ ok: false, reason: "falta_ferramenta" });
+    expect(loot.remaining(world, n.tx, n.ty)).toBe(2);
+    a.add("pickaxe", 1);
+    const r = loot.interact(world, a, pos.x, pos.y, 1000);
+    expect(r.ok && r.gained[0]).toEqual({ id: "components", qty: 2 });
+  });
+  it("foice se fabrica com componentes; curativo de fibra e antisseptico de ervas", () => {
+    const i = new Inventory();
+    i.add("scrap", 2); i.add("wood", 1); i.add("components", 1); i.add("fiber", 3); i.add("herb", 3); i.add("fat", 1);
+    expect(craftItem(i, "sickle").ok).toBe(true);
+    expect(craftItem(i, "fiber_dressing").ok).toBe(true);
+    expect(i.count("dressing")).toBe(2);
+    expect(craftItem(i, "herbal_salve").ok).toBe(true);
+    expect(i.count("antiseptic")).toBe(1);
   });
 });

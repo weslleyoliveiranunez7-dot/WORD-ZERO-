@@ -1,6 +1,7 @@
 import type { ChunkedWorld } from "./chunks";
 import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
 import { BUILD_COOLDOWN_MS } from "./building";
+import { spoilPerishables, SPOIL_INTERVAL_MS } from "./butchery";
 import { craftItem } from "./crafting";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
 import { applyInvOp } from "./invops";
@@ -37,6 +38,7 @@ export class PlayerLife {
   private lastInteractMs = -Infinity;
   private lastAttackMs = -Infinity;
   private lastBuildMs = -Infinity;
+  private lastSpoilMs: number | null = null; // 9.4: ultimo teste de apodrecimento da mochila
   private craftBusyUntilMs = 0; // Etapa 10: ate quando a fabricacao em andamento ocupa o jogador
   invVersion = 0; // sobe a cada mudanca de inventario (o servidor so reenvia quando muda)
   notices: string[] = []; // EXTRA 6.3: avisos pendentes para o dono (ex.: "Porrete quebrou"); o servidor esvazia e envia
@@ -53,8 +55,22 @@ export class PlayerLife {
   }
 
   // Avanca o tempo de jogo. Devolve true no instante em que o jogador MORRE.
-  tick(gameDtSeconds: number, moving: boolean, nowMs: number): boolean {
+  tick(gameDtSeconds: number, moving: boolean, nowMs: number, rng: () => number = Math.random): boolean {
     if (this.dead) return false;
+    if (gameDtSeconds > 0) {
+      // 9.4: carne fresca apodrece com o tempo (so conta tempo conectado). Sorteio sem estado: nada novo para salvar.
+      if (this.lastSpoilMs === null) this.lastSpoilMs = nowMs;
+      else if (nowMs - this.lastSpoilMs >= SPOIL_INTERVAL_MS) {
+        const steps = Math.min(5, Math.floor((nowMs - this.lastSpoilMs) / SPOIL_INTERVAL_MS));
+        this.lastSpoilMs = nowMs;
+        let rotted = 0;
+        for (let i = 0; i < steps; i++) rotted += spoilPerishables(this.inventory, rng);
+        if (rotted > 0) {
+          this.invVersion++;
+          this.notices.push("Parte da carne apodreceu! Conserve na gordura.");
+        }
+      }
+    }
     this.survival.regenBlocked = this.injuries.regenBlocked;
     this.survival.tick(gameDtSeconds, moving);
     if (gameDtSeconds > 0 && !this.survival.dead) {
@@ -186,13 +202,15 @@ export class PlayerLife {
 
   // Etapa 10: fabricar. `recipe` vem da rede (ja validado por inspectCraft, mas craftItem revalida). Ingredientes e resultado
   // mudam numa transacao unica; repetir o actionId nunca fabrica 2x; o tempo da receita deixa o jogador ocupado.
-  craft(recipe: unknown, actionId: number, nowMs: number): ActionResult {
+  craft(recipe: unknown, actionId: number, nowMs: number, rng: () => number = Math.random): ActionResult {
     if (this.dead) return fail("morto", 1);
     if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
     if (nowMs < this.craftBusyUntilMs) return fail("em_recarga", 1);
-    const r = craftItem(this.inventory, recipe);
+    const r = craftItem(this.inventory, recipe, rng);
     if (!r.ok) return fail(r.reason, 0); // faltou ingrediente / bancada / espaco: so avisa, nada mudou
     this.craftBusyUntilMs = nowMs + r.recipe.craftMs;
+    if (r.failed) this.notices.push("A peca rachou na queima!");
+    if (r.broke) this.notices.push(`${ITEMS[r.broke].name} quebrou!`);
     this.invVersion++;
     return { ok: true };
   }

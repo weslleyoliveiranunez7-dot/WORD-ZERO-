@@ -5,7 +5,8 @@ import type { DropView, EntityUpdateMsg } from "./protocol";
 
 // Etapa 7: recursos coletaveis e loot no chao. Logica pura (relogio por parametro), so no servidor.
 // Recursos NAO sao objetos novos: sao derivados dos tiles do mapa (mesma seed = mesmos recursos):
-//   arvore -> madeira; muro das ruinas -> pedra ou sucata. Fora disso, nada e coletavel.
+//   grama livre -> recursos da regiao (9.3: fibra, ervas, frutas, cogumelos, componentes);
+//   arvore -> madeira; margem de lago -> argila (9.6); muro das ruinas -> pedra ou sucata. Fora disso, nada e coletavel.
 // O servidor guarda apenas o que ja foi retirado de cada recurso; quem tira atualiza o contador na
 // mesma chamada (sincrona), entao dois jogadores nunca retiram mais do que existe.
 
@@ -16,7 +17,9 @@ export const DROP_TTL_MS = 300_000; // mochila de morte some apos 5 min (valor p
 export const MAX_DROPS = 200; // limite de mochilas no mundo (protege a memoria)
 
 // Etapa 10: ter a ferramenta no inventario faz cada coleta render 2 unidades (em vez de 1). Decidido so no servidor.
-export const HARVEST_TOOL: Partial<Record<ItemId, ItemId>> = { wood: "axe", stone: "pickaxe", scrap: "pickaxe" };
+export const HARVEST_TOOL: Partial<Record<ItemId, ItemId>> = { wood: "axe", stone: "pickaxe", scrap: "pickaxe", fiber: "sickle", plant: "sickle", herb: "sickle", components: "pickaxe" };
+// 9.3: recursos que NAO se colhem sem a ferramenta (ela precisa estar na mochila). Os demais rendem 1 sem ferramenta.
+export const HARVEST_NEEDS: Partial<Record<ItemId, ItemId>> = { components: "pickaxe" };
 export const TOOL_YIELD = 2;
 
 export interface NodeDef {
@@ -28,14 +31,40 @@ export interface NodeDef {
 export function nodeAt(world: ChunkedWorld, tx: number, ty: number): NodeDef | null {
   const t = world.tileAt(tx, ty);
   if (t === "tree") return { item: "wood", max: 3 };
+  if (t === "water") {
+    // 9.6: argila na margem: tile de agua encostado em chao firme. Agua funda (sem margem) nao rende nada.
+    const shore = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => world.tileAt(tx + dx, ty + dy) === "grass");
+    return shore ? { item: "clay", max: 4 } : null;
+  }
   if (t === "wall") {
     if (tx === 0 || ty === 0 || tx === world.width - 1 || ty === world.height - 1) return null; // borda do mundo
     const c = world.getChunk(Math.floor(tx / 16), Math.floor(ty / 16));
     if (c?.region !== "ruins") return null;
     return hash2(world.seed + 7, tx, ty) < 0.5 ? { item: "stone", max: 3 } : { item: "scrap", max: 2 };
   }
+  if (t === "grass") {
+    if (Math.hypot(tx - world.spawnTile.x, ty - world.spawnTile.y) < 4) return null; // area de nascimento livre de recursos
+    // 9.3: recursos de chao por regiao, sorteados por tile (mesma seed = mesmos recursos). Regiao: ver chunks.ts.
+    const region = world.getChunk(Math.floor(tx / 16), Math.floor(ty / 16))?.region;
+    const rules = region ? FORAGE[region] : undefined;
+    if (!rules) return null;
+    const r = hash2(world.seed + 31, tx, ty);
+    let acc = 0;
+    for (const f of rules) {
+      acc += f.p;
+      if (r < acc) return { item: f.item, max: f.max };
+    }
+  }
   return null;
 }
+
+// 9.3 Recursos por regiao: probabilidade por tile de chao livre (acumulada na ordem) e unidades por recurso.
+export const FORAGE: Record<string, { item: ItemId; p: number; max: number }[]> = {
+  plains: [{ item: "fiber", p: 0.05, max: 3 }, { item: "herb", p: 0.02, max: 2 }, { item: "fruit", p: 0.015, max: 2 }, { item: "plant", p: 0.015, max: 3 }],
+  forest: [{ item: "mushroom", p: 0.05, max: 2 }, { item: "herb", p: 0.04, max: 3 }, { item: "fruit", p: 0.04, max: 3 }, { item: "fiber", p: 0.03, max: 3 }, { item: "plant", p: 0.03, max: 3 }],
+  lake: [{ item: "fiber", p: 0.07, max: 4 }, { item: "plant", p: 0.02, max: 3 }, { item: "herb", p: 0.01, max: 2 }],
+  ruins: [{ item: "components", p: 0.04, max: 2 }, { item: "fiber", p: 0.03, max: 2 }],
+};
 
 export interface LootDrop {
   id: number;
@@ -132,6 +161,8 @@ export class LootWorld {
       }
     }
     if (!best) return { ok: false, reason: sawEmpty ? "recurso_esgotado" : "nada_por_perto" };
+    const need = HARVEST_NEEDS[best.def.item];
+    if (need && inv.count(need) < 1) return { ok: false, reason: "falta_ferramenta" }; // nada foi retirado
     const tool = HARVEST_TOOL[best.def.item];
     const want = Math.min(tool && inv.count(tool) > 0 ? TOOL_YIELD : 1, this.remaining(world, best.tx, best.ty));
     const trial = inv.clone(); // transacao: so aplica se TUDO coube

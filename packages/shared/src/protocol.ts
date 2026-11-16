@@ -7,7 +7,7 @@ import { WORLD_ID_PATTERN } from "./servers";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 10; // 10 = inventario (REQUEST_INVENTORY_MOVE com op, INVENTORY_UPDATE.weight/maxWeight, ItemStack.dur/eq); 9 = ferimentos (PLAYER_STATE.body/injuries/pain/bleeding, REQUEST_USE_ITEM.part); 8 = 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 13; // 13 = 9.3 Coleta (7 itens novos, recursos de chao por regiao); 12 = 9.6 Ceramica (11 itens novos, argila na margem dos lagos); 11 = 9.4 Acougue (13 itens novos, receitas com ferramenta/subprodutos; cliente antigo nao conhece os itens); 10 = inventario (REQUEST_INVENTORY_MOVE com op, INVENTORY_UPDATE.weight/maxWeight, ItemStack.dur/eq); 9 = ferimentos (PLAYER_STATE.body/injuries/pain/bleeding, REQUEST_USE_ITEM.part); 8 = 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",

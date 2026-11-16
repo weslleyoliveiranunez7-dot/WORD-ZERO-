@@ -38,7 +38,7 @@ export interface MobDef {
 
 export const MOBS: Record<MobKind, MobDef> = {
   zombie: { hp: 40, speed: 80, sense: 220, lose: 380, attackRange: 26, attackDmg: 8, attackCdMs: 1000, wanderRadius: 120, drops: [{ id: "scrap", min: 1, max: 2, chance: 0.6 }, { id: "bandage", min: 1, max: 1, chance: 0.15 }, { id: "club", min: 1, max: 1, chance: 0.08 }, { id: "dressing", min: 1, max: 2, chance: 0.2 }, { id: "painkiller", min: 1, max: 1, chance: 0.08 }, { id: "antiseptic", min: 1, max: 1, chance: 0.08 }, { id: "antibiotic", min: 1, max: 1, chance: 0.05 }, { id: "splint", min: 1, max: 1, chance: 0.06 }, { id: "first_aid_kit", min: 1, max: 1, chance: 0.03 }] },
-  deer: { hp: 16, speed: 120, sense: 150, lose: 0, attackRange: 0, attackDmg: 0, attackCdMs: 0, wanderRadius: 160, drops: [{ id: "raw_meat", min: 1, max: 2, chance: 1 }] },
+  deer: { hp: 16, speed: 120, sense: 150, lose: 0, attackRange: 0, attackDmg: 0, attackCdMs: 0, wanderRadius: 160, drops: [{ id: "deer_carcass", min: 1, max: 1, chance: 1 }] },
 };
 
 export type MobState = "idle" | "wander" | "chase" | "flee" | "dead";

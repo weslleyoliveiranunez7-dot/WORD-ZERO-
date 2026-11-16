@@ -18,6 +18,7 @@ export * from "./persist";
 export * from "./mobs";
 export * from "./combat";
 export * from "./crafting";
+export * from "./butchery";
 export * from "./building";
 export * from "./daynight";
 export * from "./servers";

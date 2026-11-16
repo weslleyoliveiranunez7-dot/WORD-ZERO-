@@ -262,7 +262,7 @@ describe("performAttack (o golpe inteiro, no servidor)", () => {
     }
     expect(z.state).toBe("dead");
     expect(kinds).toContain("kill");
-    expect(drop?.items[0]).toMatchObject({ id: "raw_meat" });
+    expect(drop?.items[0]).toMatchObject({ id: "deer_carcass" });
     const again = performAttack(world, mw, a, [a], ++id, t);
     expect(again.events[0].kind).toBe("miss");
   });
