@@ -42,6 +42,8 @@ import {
   drawDoorPiece,
   drawFloorPiece,
   drawRoofPiece,
+  drawForage,
+  drawPickedTile,
   drawRubbleTile,
   drawStumpTile,
   drawTile,
@@ -61,6 +63,7 @@ const REJECT_TEXT: Record<string, string> = {
   sem_slot_livre: "Sem slot livre para dividir a pilha.",
   nao_divisivel: "Este item nao pode ser dividido assim.",
   nao_equipavel: "Este item nao pode ser equipado.",
+  falta_ferramenta: "Falta a ferramenta certa na mochila (componentes exigem picareta).",
 };
 
 export class GameScene extends Phaser.Scene {
@@ -552,6 +555,7 @@ export class GameScene extends Phaser.Scene {
       const type = this.world.tileAt(tx, ty);
       if (type === "tree") drawStumpTile(g, tx, ty, ts);
       else if (type === "wall") drawRubbleTile(g, tx, ty, ts);
+      else if (type === "grass") drawPickedTile(g, tx, ty, ts);
     }
     for (const d of m.drops) drawBackpack(g, d.x, d.y);
   }
@@ -670,6 +674,10 @@ export class GameScene extends Phaser.Scene {
         const gy = chunk.cy * CHUNK_SIZE + ly;
         const type = TILE_ORDER[chunk.tiles[ly * CHUNK_SIZE + lx]];
         drawTile(g, type, lx, ly, gx, gy, ts);
+        if (type === "grass") {
+          const n = nodeAt(this.world, gx, gy); // 9.3: recurso de chao aparece desenhado
+          if (n) drawForage(g, n.item, lx, ly, ts);
+        }
       }
     }
     const key = `chunk-${chunk.cy * this.world.chunksX + chunk.cx}`;

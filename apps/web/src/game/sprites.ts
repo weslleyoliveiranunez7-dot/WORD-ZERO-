@@ -120,6 +120,33 @@ export function drawTile(g: G, type: TileType, lx: number, ly: number, gx: numbe
   else drawGrass(g, x, y, gx, gy, ts);
 }
 
+// 9.3: recurso de chao (fibra, erva, fruta, cogumelo, planta, componentes) desenhado por cima da grama, em coordenadas do chunk.
+const FORAGE_COLOR: Record<string, number> = { fiber: 0xc9b458, herb: 0x7fd36b, fruit: 0xd8434e, mushroom: 0xe8dfd0, plant: 0x59b04f, components: 0x9aa3ad };
+export function drawForage(g: G, item: string, lx: number, ly: number, ts: number): void {
+  const cx = lx * ts + ts / 2;
+  const cy = ly * ts + ts / 2;
+  const c = FORAGE_COLOR[item] ?? 0xffffff;
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(cx, cy + 6, 14, 4);
+  g.fillStyle(c, 1);
+  if (item === "fiber") for (let i = -2; i <= 2; i++) g.fillRect(cx + i * 3, cy - 6 + Math.abs(i), 1.5, 11 - Math.abs(i));
+  else if (item === "mushroom") {
+    g.fillRect(cx - 1.5, cy, 3, 6);
+    g.fillStyle(0xb5533c, 1);
+    g.fillEllipse(cx, cy, 12, 7);
+  } else if (item === "components") g.fillRect(cx - 5, cy - 3, 10, 7);
+  else {
+    g.fillCircle(cx - 4, cy, 3);
+    g.fillCircle(cx + 3, cy - 3, 3);
+    g.fillCircle(cx + 3, cy + 3, item === "fruit" ? 3 : 2);
+  }
+}
+
+// 9.3: recurso de chao ja colhido (esgotado): volta a grama limpa, em coordenadas do mundo.
+export function drawPickedTile(g: G, tx: number, ty: number, ts: number): void {
+  drawGrass(g, tx * ts, ty * ts, tx, ty, ts);
+}
+
 // Mochila deixada no chao (loot).
 export function drawBackpack(g: G, x: number, y: number): void {
   g.fillStyle(0x000000, 0.25);
