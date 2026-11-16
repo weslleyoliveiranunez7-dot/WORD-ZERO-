@@ -1,0 +1,8 @@
+{
+  "appId": "com.worldzero.game",
+  "appName": "WORLD ZERO",
+  "webDir": "../apps/web/dist",
+  "backgroundColor": "#000000",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": false }
+}
