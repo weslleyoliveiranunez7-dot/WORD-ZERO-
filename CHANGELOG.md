@@ -1,5 +1,14 @@
 # Changelog
 
+## Etapa 13 - Servidores e lista
+- Mundos independentes: cada mundo é uma sala própria (jogadores, criaturas, bases e personagens salvos separados). Cadastro por `WORLDS="id:Nome:regiao;..."` (padrão: `mundo-1`). O `mundo-1` mantém os ids de gravação antigos.
+- Limite de 50 jogadores por mundo, imposto no servidor (`MAX_PLAYERS` agora vai de 1 a 50). Mundo lotado recusa a entrada ("servidor lotado") e nunca abre uma segunda sala do mesmo mundo; a vaga de quem está reconectando continua reservada.
+- `GET /servers`: nome, região, jogadores/capacidade, status (online / iniciando / lotado) e sala ativa. `/health` ganhou `worlds`.
+- Cliente: tela de servidores (atualiza sozinha, rola, marca o último mundo, botão CONTINUAR, lotado desabilitado, volta à lista com aviso se encher na hora). Nome do mundo no HUD.
+- `JoinOptions.world` (opcional, sem mudar a versão do protocolo). Servidor antigo sem `/servers`: o cliente oferece entrar no padrão.
+- Testes: `shared/servers.test.ts` e `apps/server/src/worldcheck.ts` (servidor real, 2 mundos, limite 3, lotado, independência, reconexão); passo novo no workflow.
+- Ainda não rodado: servidor Colyseus real, `worldcheck.ts` e a tela no celular (ver PROGRESSO.md).
+
 ## Etapa 12 - Banco e persistência
 - PostgreSQL (`DATABASE_URL`) com migrações versionadas e checksum (`players`, `snapshots`, `audit_logs`, `schema_migrations`); aplicadas sozinhas ao ligar o servidor, com lock contra dois servidores migrando juntos.
 - Salvamento: autosave de 30 s + gravação em até ~2 s após mudança de inventário + morte, saída e desligamento; uma gravação por vez por personagem.

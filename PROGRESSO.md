@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-15
-Etapa atual: **Etapa 12 (Banco e persistência) - código escrito; testes da camada de armazenamento (arquivos) e do executor de migrações passam aqui; PostgreSQL REAL, servidor Colyseus REAL e o teste de reinício AINDA NÃO rodados (o workflow novo roda tudo, com um Postgres de verdade).**
+Etapa atual: **Etapa 13 (Servidores e lista) - código escrito; 8 testes novos de `shared` passam (shim Node), a lógica do cadastro de mundos foi exercitada em Node e o typecheck foi feito só contra stubs de colyseus/phaser. Servidor Colyseus REAL, `worldcheck.ts` e o cliente (tela de servidores) AINDA NÃO rodados (o workflow novo roda `worldcheck`).**
+(Etapa 12 anterior:) **Etapa 12 (Banco e persistência) - código escrito; testes da camada de armazenamento (arquivos) e do executor de migrações passam aqui; PostgreSQL REAL, servidor Colyseus REAL e o teste de reinício AINDA NÃO rodados (o workflow novo roda tudo, com um Postgres de verdade).**
 (Etapa 11 anterior:) **Etapa 11 (Construção de base) - código escrito; 23 testes novos de `shared` passam (shim Node, 165 no total); servidor REAL, atacante e cliente AINDA NÃO rodados. Aceite pendente: base permanece após desconexão e REINÍCIO do servidor (precisa de teste real com armazenamento).**
 (Etapa 10 anterior:) o usuário não informou o resultado do workflow antes de pedir a Etapa 11; segue como "escrita".
 Etapa atual: **Etapa 10 (Crafting) - código escrito; 25 testes novos de `shared` passam (shim Node, 142 no total); servidor REAL, atacante e cliente AINDA NÃO rodados.**
@@ -50,11 +51,34 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 10 | Crafting | Escrita; falta o workflow (atacante atualizado) e testar no celular |
 | 11 | Construção de base | Escrita; falta o workflow e o aceite de reiniciar o servidor com as bases |
 | 12 | Banco e persistência | Escrita; falta o workflow (Postgres + reinício) e testar com Supabase/Render |
-| 13 | Servidores e lista | Pendente |
+| 13 | Servidores e lista | Escrita; falta o workflow (`worldcheck`) e testar a tela de servidores no celular |
 | 14 | Temporada de 7 dias e wipe | Pendente |
 | 15 | Interface e polimento mobile | Pendente |
 | 16 | APK e GitHub Pages | Pendente |
 | 17 | Teste de carga e lançamento | Pendente |
+
+## O que já foi feito (Etapa 13)
+- `shared/servers.ts`: `WorldDef`/`WorldInfo`/`ServerListResponse`, `WORLD_ID_PATTERN`, `DEFAULT_WORLD_ID` (`mundo-1`), `MAX_WORLDS` (20), códigos de recusa (`4005` mundo desconhecido, `4006` lotado), `worldCapacity` (nunca passa de 50), `worldStatus` (online / iniciando / lotado), `parseWorldDefs` (config `WORLDS`) e `parseServerList` (o cliente valida a lista vinda da rede). `JoinOptions.world` (opcional; id inválido = entrada recusada). `PROTOCOL_VERSION` NÃO mudou (campo opcional).
+- `server/worlds.ts`: `WorldRegistry` (mundos cadastrados + população/sala ativa em tempo real; `claim` garante UMA sala viva por mundo), `characterId(key, mundo)` e `structuresId(mundo)`. O `mundo-1` mantém os ids de gravação de antes (ninguém perde personagem nem bases); nos outros o id mistura a chave com o mundo.
+- `server/config.ts`: `WORLDS="id:Nome:regiao;..."` (padrão: um mundo `mundo-1`); `MAX_PLAYERS` agora vai de 1 a 50 (antes até 200).
+- `server/index.ts`: `GET /servers` (lista: nome, região, jogadores/capacidade, status, sala ativa); `/health` mostra `maxPlayers` e `worlds`; a sala `world` é definida com `filterBy(["world"])` (mesmo mundo = mesma sala).
+- `WorldRoom`: cada sala é UM mundo (`worldId`); `onCreate` recusa mundo não cadastrado e segunda sala do mesmo mundo ("servidor lotado": a sala cheia fica trancada e o Colyseus tentaria abrir outra); `onAuth` recusa sala de outro mundo e sala cheia (vagas de quem está reconectando contam); `maxClients` ≤ 50; população publicada no cadastro ao entrar, ao sair e 1x/s; personagens e bases gravados com o id do mundo.
+- Cliente: `ServerListScene` (lista com nome, região, N/capacidade e status; atualiza a cada 5 s; arrastar para rolar; mundo lotado desabilitado; último mundo marcado com ★ e botão CONTINUAR; sem lista (servidor antigo/fora do ar): botão "ENTRAR NO SERVIDOR PADRAO"). `NetClient` entra pela sala da lista (`joinById`) ou pelo mundo (`joinOrCreate` + `world`), tenta uma vez pelo mundo se a sala mudou, lembra o último mundo e traduz "lotado". `GameScene` mostra o nome do mundo no HUD e, se o servidor estiver lotado, volta à lista com aviso. A reconexão de rede (15 s) continua como antes e volta à MESMA sala.
+- `server/worldcheck.ts` (servidor REAL, 2 mundos, limite 3): lista, mesma sala/salas diferentes, 4º jogador recusado (por sala e por mundo) sem abrir 2ª sala, vaga liberada ao sair, mundo desconhecido, sala de outro mundo, inventário independente por mundo (mesmo personagem), reconexão ao mesmo mundo sem duplicar a vaga. Passo novo no workflow ("Teste de servidores").
+
+## Verificado e não verificado (Etapa 13)
+- Verificado (Node 22 + tsc 6, shim de vitest): 8 testes novos em `shared/servers.test.ts` passam (capacidade, status, `WORLDS`, `parseJoinOptions` com mundo, `parseServerList` adulterada); `WorldRegistry`/`characterId`/`structuresId` exercitados em Node (claim, release de sala antiga, população, ids); typecheck de `shared` limpo; typecheck de `index.ts`, `worlds.ts`, `config.ts`, `WorldRoom.ts`, `worldcheck.ts`, `NetClient.ts`, `serverUrl.ts` e `ServerListScene.ts` só contra stubs (`any`) de colyseus/phaser/node.
+- NÃO verificado: `pnpm install`/typecheck real; servidor Colyseus real e `worldcheck.ts`; a tela de servidores no navegador/celular (layout, rolagem, máscara). Suposições do Colyseus 0.15 a confirmar no workflow: `filterBy` (sem `world` na entrada = qualquer sala; com `world` = a sala daquele mundo), `this.roomId` já disponível em `onCreate`, o erro lançado em `onCreate` chegar ao cliente (o cliente reconhece "lotado" pelo código OU pela mensagem), sala cheia trancada automaticamente e `joinById` recusando sala trancada.
+- Limitações conhecidas: todos os mundos usam a MESMA seed/mapa (seed por mundo entra na Etapa 14, com a temporada); a lista não mostra tempo restante da temporada (Etapa 14); o cadastro vem da configuração `WORLDS` (não há painel/cadastro em banco); sala vazia continua fechando (e reabre no primeiro jogador): criaturas e mochilas no chão não sobrevivem a isso, só personagens e bases; `/servers` não tem limite de requisições por IP; vários mundos no mesmo processo dividem CPU/memória (capacidade real de 50 por mundo ainda não medida: Etapa 17).
+
+## Critério de aceite da Etapa 13
+"Jogadores entram no mesmo mundo e não ultrapassam o limite." Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de servidores" (todos OK) e (2) o usuário abrir o jogo ONLINE, ver a lista de servidores, entrar num mundo, e ver outro aparelho entrar no MESMO mundo.
+
+## Arquivos desta etapa (Etapa 13) - vão no `WORLD-ZERO-etapa13.zip`
+Novos: `packages/shared/src/{servers,servers.test}.ts`, `apps/server/src/{worlds,worldcheck}.ts`, `apps/web/src/game/ServerListScene.ts`
+Alterados: `packages/shared/src/{index,protocol}.ts`, `apps/server/src/{config,index}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/server/src/restart.ts` (correção de tipos da rodada anterior), `apps/server/package.json`, `apps/web/src/{main.ts,net/NetClient.ts,net/serverUrl.ts,game/BootScene.ts,game/GameScene.ts}`, `.env.example`, `render.yaml`, `HOSPEDAR_SERVIDOR.md`, `PROGRESSO.md`, `CHANGELOG.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (passo "Teste de servidores" + resumo).
+Apagados: nenhum.
 
 ## O que já foi feito (Etapa 1)
 Arquivos criados (todos em `parte-1/`, que é a raiz do repositório):

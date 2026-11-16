@@ -13,6 +13,9 @@ services:
         value: "22"
       - key: CORS_ORIGIN
         value: "*"
+      # Mundos (Etapa 13): id:Nome:regiao separados por ; . Cada mundo e uma sala com ate 50 jogadores (ver HOSPEDAR_SERVIDOR.md).
+      - key: WORLDS
+        value: "mundo-1:Mundo 1:br"
       # Persistencia (ver HOSPEDAR_SERVIDOR.md). Preencha no painel do Render; NUNCA coloque a senha/chave aqui.
       - key: DATABASE_URL
         sync: false

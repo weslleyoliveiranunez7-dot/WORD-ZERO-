@@ -59,3 +59,14 @@ Com `DATABASE_URL` o servidor cria e atualiza as tabelas sozinho (migrações), 
 - Manual (precisa de um computador/terminal com `DATABASE_URL`): `pnpm --filter @worldzero/server backup` grava `backups/worldzero-DATA.json` com o estado atual de todos os registros. Restaurar: `pnpm --filter @worldzero/server backup import ARQUIVO.json` (de preferência com o servidor desligado). O arquivo tem hashes de chave e o estado do jogo: guarde-o em lugar privado.
 - Backup do banco inteiro (inclui snapshots e auditoria): use o recurso do provedor (Supabase/Neon/Render têm backup ou "point-in-time recovery" em alguns planos; confira no site deles o que o plano gratuito oferece) ou `pg_dump "$DATABASE_URL" > backup.sql`.
 - Os snapshots ficam no MESMO banco: protegem de bugs e corrupção, não de perder o banco.
+
+
+## Servidores / mundos (Etapa 13)
+
+- Cada **mundo** é independente: sala própria, jogadores, criaturas, bases e personagens salvos separados. O mesmo aparelho tem um personagem diferente em cada mundo.
+- Cadastro: variável `WORLDS` no Render (Environment), formato `id:Nome:regiao` separados por `;`. Ex.: `mundo-1:Mundo 1:br;mundo-2:Mundo 2:br`. O id usa só `a-z`, `0-9` e hífen (até 24); no máximo 20 mundos. Config inválida impede o servidor de ligar (melhor que ligar com mundos trocados).
+- **Não troque nem renomeie o id `mundo-1`**: é ele que mantém os personagens e as bases criados antes da Etapa 13. Ids novos começam do zero.
+- Limite: no máximo **50 jogadores por mundo** (`MAX_PLAYERS` de 1 a 50). Mundo cheio recusa a entrada; quem está reconectando (até 15 s) mantém a vaga.
+- `ENDERECO/servers` mostra a lista (nome, região, jogadores/limite, status). `ENDERECO/health` mostra `worlds` e `maxPlayers`.
+- Todos os mundos rodam no MESMO processo (no plano gratuito do Render, CPU e memória são pequenas): comece com 1 ou 2 mundos. Quantos jogadores o servidor aguenta de verdade só será medido na Etapa 17.
+- Todos os mundos usam o mesmo mapa por enquanto (um mapa diferente por mundo entra com as temporadas, Etapa 14).
