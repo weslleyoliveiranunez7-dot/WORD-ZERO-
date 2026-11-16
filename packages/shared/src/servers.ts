@@ -1,4 +1,5 @@
 import { MAX_PLAYERS_PER_WORLD } from "./constants";
+import type { SeasonStatus } from "./season";
 
 // Etapa 13: mundos (servidores) independentes. Cada mundo tem id, nome, regiao, no maximo 50 jogadores e o proprio estado salvo.
 // Este arquivo so tem tipos e regras puras (validacao, capacidade, status): o servidor e o cliente usam as MESMAS regras.
@@ -23,6 +24,7 @@ export interface WorldInfo extends WorldDef {
   players: number; // jogadores no mundo agora (inclui quem esta na janela de reconexao: a vaga continua dele)
   capacity: number; // nunca passa de MAX_PLAYERS_PER_WORLD
   status: WorldStatus;
+  season?: { n: number; seed: number; status: SeasonStatus; endsAt: number; now: number }; // Etapa 14: temporada atual (now = hora do servidor)
   roomId?: string; // sala ativa; ausente = ainda nao foi criada (e criada quando o primeiro jogador entra)
 }
 
@@ -69,6 +71,12 @@ export function parseWorldDefs(raw: string | undefined): WorldDef[] {
   return out;
 }
 
+const isSeasonInfo = (o: unknown): boolean => {
+  if (typeof o !== "object" || o === null) return false;
+  const s = o as Record<string, unknown>;
+  return Number.isInteger(s.n) && (s.n as number) >= 1 && Number.isInteger(s.seed) && (s.seed as number) >= 1 && ["ACTIVE", "CLOSING", "ARCHIVED", "RESETTING"].includes(String(s.status)) && Number.isFinite(s.endsAt) && Number.isFinite(s.now);
+};
+
 const isWorldInfo = (o: unknown): o is WorldInfo => {
   if (typeof o !== "object" || o === null) return false;
   const w = o as Record<string, unknown>;
@@ -85,6 +93,7 @@ const isWorldInfo = (o: unknown): o is WorldInfo => {
     (w.capacity as number) >= 1 &&
     (w.capacity as number) <= MAX_PLAYERS_PER_WORLD &&
     (w.status === "iniciando" || w.status === "online" || w.status === "lotado") &&
+    (w.season === undefined || isSeasonInfo(w.season)) &&
     (w.roomId === undefined || (typeof w.roomId === "string" && w.roomId.length <= 64))
   );
 };
