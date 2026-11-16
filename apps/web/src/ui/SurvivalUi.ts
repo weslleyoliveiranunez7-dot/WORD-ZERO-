@@ -1,4 +1,4 @@
-import { ITEMS, KIND_NAME, PART_NAME, SEV_NAME, Inventory, RECIPES, RECIPE_IDS, missingFor, type BodyPart, type InjuryView, type InventoryUpdateMsg, type ItemCategory, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
+import { ITEMS, ITEM_DESC, KIND_NAME, MAX_CARRY_WEIGHT, compareStacks, PART_NAME, SEV_NAME, Inventory, RECIPES, RECIPE_IDS, missingFor, type BodyPart, type InjuryView, type InventoryIntent, type InventoryUpdateMsg, type ItemCategory, type ItemStack, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
 import { uiRoot } from "./landscape";
 import type { Services } from "./Services";
 import { C, CATEGORY_LABEL, actionButton, chip, describeItem, el, icon, itemName, norm, searchBox, setEnabled } from "./theme";
@@ -14,11 +14,13 @@ const ATTRS: { key: "health" | "hunger" | "thirst" | "energy"; label: string; ic
   { key: "energy", label: "Energia", icon: "⚡", color: "#c9be4a", desc: "Disposicao fisica. Abaixo de 20 voce fica exausto e mais lento." },
 ];
 
+type InvFilter = ItemCategory | "all" | "equipped" | "usable"; // EXTRA 6.3: filtros do inventario
 const HOTBAR = 6; // os 6 primeiros slots da mochila (teclas 1 a 6); o inventario mostra todos
 const level = (v: number): string => (v <= 0 ? "CRITICO" : v < 20 ? "Baixo" : v < 60 ? "Atencao" : "Bom");
 
 export class SurvivalUi {
   onUse: (slot: number, part?: BodyPart) => void = () => {}; // `part` = parte do corpo escolhida para tratar (so intencao)
+  onInvOp: (op: InventoryIntent) => void = () => {}; // EXTRA 6.3: mover/dividir/descartar/equipar (so intencao; o servidor decide)
   onRespawn: () => void = () => {};
   onCraft: (recipe: RecipeId) => void = () => {}; // so uma INTENCAO; o servidor confere ingredientes, bancada, espaco e tempo
   private root: HTMLDivElement;
@@ -43,8 +45,15 @@ export class SurvivalUi {
   private detail!: HTMLDivElement;
   private catRow!: HTMLDivElement;
   private selSlot = -1;
-  private invCat: ItemCategory | "all" = "all";
+  private invCat: InvFilter = "all";
   private invQuery = "";
+  private weightText!: HTMLDivElement;
+  private weightFill!: HTMLDivElement;
+  private weightInfo = { w: 0, max: MAX_CARRY_WEIGHT };
+  private moveFrom = -1; // EXTRA 6.3: slot de origem de um "mover" em andamento (-1 = nenhum)
+  private opQty = 1; // quantidade para dividir/descartar
+  private confirmDiscard = false;
+  private confirmTimer = 0;
   // fabricacao
   private recList!: HTMLDivElement;
   private recCatRow!: HTMLDivElement;
@@ -273,7 +282,12 @@ export class SurvivalUi {
   }
 
   // ---------- INVENTARIO ----------
+  // So mostra o que o servidor mandou. Mover/dividir/descartar/equipar viram INTENCOES (onInvOp); nada muda aqui antes da resposta.
   private buildInventory(body: HTMLElement): void {
+    const wt = el("div", { marginBottom: "6px" }, body);
+    this.weightText = el("div", { fontSize: "11px", marginBottom: "3px" }, wt);
+    const bar = el("div", { height: "6px", background: C.bg3, border: `1px solid ${C.line}`, borderRadius: "3px", overflow: "hidden" }, wt);
+    this.weightFill = el("div", { height: "100%", width: "0%", background: C.ok }, bar);
     searchBox((q) => {
       this.invQuery = norm(q);
       this.renderInventory();
@@ -283,34 +297,93 @@ export class SurvivalUi {
     this.detail = el("div", { marginTop: "8px", padding: "8px", background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", minHeight: "70px" }, body);
   }
 
+  private isUsable(s: Slot): boolean {
+    const def = s ? ITEMS[s.id] : undefined;
+    return !!def && (Object.keys(def.effects).length > 0 || !!def.medical);
+  }
+
   private matches(s: Slot): boolean {
     if (!s) return false;
     const def = ITEMS[s.id];
-    return (this.invCat === "all" || def?.category === this.invCat) && (!this.invQuery || norm(itemName(s.id)).includes(this.invQuery));
+    const f = this.invCat;
+    const okFilter = f === "all" || (f === "equipped" ? s.eq === true : f === "usable" ? this.isUsable(s) : def?.category === f);
+    return okFilter && (!this.invQuery || norm(itemName(s.id)).includes(this.invQuery));
+  }
+
+  private durPct(s: ItemStack): number | null {
+    const max = ITEMS[s.id]?.durability;
+    return max ? Math.max(0, Math.min(1, (s.dur ?? max) / max)) : null;
+  }
+
+  private durColor(p: number): string {
+    return p > 0.5 ? C.ok : p > 0.25 ? C.warn : C.bad;
+  }
+
+  private renderWeight(): void {
+    const { w, max } = this.weightInfo;
+    const used = this.slots.filter((x) => x).length;
+    const ratio = max > 0 ? Math.min(1, w / max) : 0;
+    this.weightText.textContent = `Peso ${w.toFixed(1)} / ${max} kg   |   Slots ${used}/${this.slots.length}`;
+    this.weightText.style.color = ratio >= 0.9 ? C.bad : C.text;
+    this.weightFill.style.width = `${Math.round(ratio * 100)}%`;
+    this.weightFill.style.background = ratio >= 0.9 ? C.bad : ratio >= 0.7 ? C.warn : C.ok;
+  }
+
+  private selectSlot(i: number): void {
+    this.selSlot = i;
+    this.confirmDiscard = false;
+    const s = this.slots[i];
+    this.opQty = s ? Math.max(1, Math.floor(s.qty / 2)) : 1;
+    this.renderInventory();
   }
 
   private renderInventory(): void {
     if (!this.sv.isOpen("inventory")) return void this.dirty.add("inventory");
+    this.renderWeight();
     this.catRow.textContent = "";
     const cats = new Set<ItemCategory>();
     for (const s of this.slots) if (s && ITEMS[s.id]) cats.add(ITEMS[s.id].category);
-    if (this.invCat !== "all" && !cats.has(this.invCat)) this.invCat = "all";
-    chip("Todos", this.invCat === "all", () => ((this.invCat = "all"), this.renderInventory()), this.catRow);
-    for (const c of cats) chip(CATEGORY_LABEL[c], this.invCat === c, () => ((this.invCat = c), this.renderInventory()), this.catRow);
+    const hasEq = this.slots.some((s) => s?.eq);
+    const hasUse = this.slots.some((s) => this.isUsable(s));
+    if (this.invCat !== "all" && !(cats as Set<string>).has(this.invCat) && !(this.invCat === "equipped" && hasEq) && !(this.invCat === "usable" && hasUse)) this.invCat = "all";
+    const pick = (f: InvFilter): void => {
+      this.invCat = f;
+      this.renderInventory();
+    };
+    chip("Todos", this.invCat === "all", () => pick("all"), this.catRow);
+    if (hasEq) chip("Equipado", this.invCat === "equipped", () => pick("equipped"), this.catRow);
+    if (hasUse) chip("Usaveis", this.invCat === "usable", () => pick("usable"), this.catRow);
+    for (const c of cats) chip(CATEGORY_LABEL[c], this.invCat === c, () => pick(c), this.catRow);
 
     this.grid.textContent = "";
     this.slots.forEach((s, i) => {
       const on = this.matches(s);
-      const cell = el("div", { position: "relative", height: "46px", background: s ? C.bg3 : C.bg2, border: `1px solid ${i === this.selSlot ? C.lineHi : C.line}`, borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", opacity: s && !on ? "0.25" : "1" }, this.grid);
+      const isFrom = i === this.moveFrom;
+      const border = isFrom ? C.warn : i === this.selSlot ? C.lineHi : s?.eq ? C.ok : C.line;
+      const cell = el("div", { position: "relative", height: "46px", background: s ? C.bg3 : C.bg2, border: `1px solid ${border}`, borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", opacity: s && !on ? "0.25" : "1", boxShadow: isFrom ? `inset 0 0 0 1px ${C.warn}` : "none" }, this.grid);
       el("div", { position: "absolute", left: "3px", top: "1px", fontSize: "9px", color: C.dim }, cell, String(i + 1));
       if (s) {
         cell.appendChild(document.createTextNode(icon(s.id)));
-        el("div", { position: "absolute", right: "3px", bottom: "1px", fontSize: "11px", fontWeight: "bold" }, cell, String(s.qty));
+        if (s.qty > 1) el("div", { position: "absolute", right: "3px", bottom: "3px", fontSize: "11px", fontWeight: "bold" }, cell, String(s.qty));
+        if (s.eq) el("div", { position: "absolute", right: "3px", top: "1px", fontSize: "9px", fontWeight: "bold", color: C.ok }, cell, "E");
+        const dp = this.durPct(s);
+        if (dp !== null) {
+          const bar = el("div", { position: "absolute", left: "3px", right: "3px", bottom: "1px", height: "3px", background: C.bg, borderRadius: "2px", overflow: "hidden" }, cell);
+          el("div", { height: "100%", width: `${Math.round(dp * 100)}%`, background: this.durColor(dp) }, bar);
+        }
         cell.title = itemName(s.id);
       }
       cell.onclick = (): void => {
-        this.selSlot = i;
-        this.renderInventory();
+        if (this.moveFrom >= 0) {
+          const from = this.moveFrom;
+          this.moveFrom = -1;
+          if (from !== i) {
+            this.onInvOp({ op: "move", from, to: i });
+            this.selSlot = i; // a selecao acompanha o item movido (o servidor pode recusar; entao so volta ao normal)
+          }
+          return this.renderInventory();
+        }
+        this.selectSlot(i);
       };
     });
     this.renderDetail();
@@ -320,26 +393,105 @@ export class SurvivalUi {
     const d = this.detail;
     d.textContent = "";
     const s = this.slots[this.selSlot];
+    if (this.moveFrom >= 0) {
+      el("div", { color: C.warn, fontWeight: "bold", marginBottom: "6px" }, d, `Mover o slot ${this.moveFrom + 1}: toque no slot de destino.`);
+      el("div", { color: C.dim, fontSize: "10px", marginBottom: "6px" }, d, "Slot vazio = muda de lugar. Mesmo item = junta as pilhas. Outro item = troca de lugar.");
+      const c = actionButton("CANCELAR", () => ((this.moveFrom = -1), this.renderInventory()), d);
+      c.style.background = C.bg3;
+      return;
+    }
     if (this.selSlot < 0) return void el("div", { color: C.dim }, d, "Selecione um slot para ver o item.");
     if (!s) return void el("div", { color: C.dim }, d, `Slot ${this.selSlot + 1} vazio.`);
     const def = ITEMS[s.id];
-    el("div", { fontWeight: "bold", fontSize: "13px" }, d, `${icon(s.id)} ${itemName(s.id)}  x${s.qty}`);
+    el("div", { fontWeight: "bold", fontSize: "13px" }, d, `${icon(s.id)} ${itemName(s.id)}  x${s.qty}${s.eq ? "  [EQUIPADO]" : ""}`);
     if (def) {
-      el("div", { color: C.dim, fontSize: "10px", margin: "2px 0 5px" }, d, `${CATEGORY_LABEL[def.category]} | peso ${def.weight} kg cada | pilha ate ${def.maxStack}`);
+      const total = Math.round(def.weight * s.qty * 100) / 100;
+      el("div", { color: C.dim, fontSize: "10px", margin: "2px 0 5px" }, d, `${CATEGORY_LABEL[def.category]} | ${def.weight} kg cada${s.qty > 1 ? ` (${total} kg no total)` : ""} | pilha ate ${def.maxStack}`);
+      const dp = this.durPct(s);
+      if (dp !== null && def.durability) {
+        const row = el("div", { margin: "0 0 6px" }, d);
+        el("div", { fontSize: "11px", marginBottom: "2px" }, row, `Durabilidade ${s.dur ?? def.durability}/${def.durability}${dp <= 0.25 ? "  (quase quebrando)" : ""}`);
+        const bar = el("div", { height: "5px", background: C.bg3, border: `1px solid ${C.line}`, borderRadius: "3px", overflow: "hidden" }, row);
+        el("div", { height: "100%", width: `${Math.round(dp * 100)}%`, background: this.durColor(dp) }, bar);
+      }
+      const desc = ITEM_DESC[s.id];
+      if (desc) el("div", { fontSize: "11px", marginBottom: "4px", fontStyle: "italic" }, d, desc);
       el("div", { fontSize: "11px", marginBottom: "6px" }, d, describeItem(def));
     }
-    const usable = !!def && (Object.keys(def.effects).length > 0 || !!def.medical);
-    const b = actionButton(usable ? "USAR / CONSUMIR 1" : "NAO CONSUMIVEL", () => this.onUse(this.selSlot, this.selPart ?? undefined), d);
-    setEnabled(b, usable);
-    const hint = usable ? (this.selSlot < 9 ? `Atalho: tecla ${this.selSlot + 1}` : "") : "Este item nao e usado direto: serve para fabricar, construir ou como equipamento.";
-    if (hint) el("div", { color: C.dim, fontSize: "10px", marginTop: "4px" }, d, hint);
+    this.renderCompare(d, s);
+
+    const usable = this.isUsable(s);
+    const canStack = !!def && def.maxStack > 1;
+    this.opQty = Math.max(1, Math.min(s.qty, this.opQty));
+    if (s.qty > 1) {
+      const q = el("div", { display: "flex", alignItems: "center", gap: "6px", margin: "4px 0" }, d);
+      el("span", { color: C.dim }, q, "Quantidade:");
+      const mk = (label: string, delta: number): void => {
+        const b = el("button", { font: "bold 14px monospace", width: "34px", height: "30px", border: `1px solid ${C.line}`, borderRadius: "3px", background: C.bg3, color: C.text, touchAction: "manipulation" }, q, label);
+        b.onclick = (): void => {
+          this.opQty = Math.max(1, Math.min(s.qty, this.opQty + delta));
+          this.confirmDiscard = false;
+          this.renderDetail();
+        };
+      };
+      mk("-", -1);
+      el("b", { minWidth: "24px", textAlign: "center" }, q, String(this.opQty));
+      mk("+", 1);
+    }
+    const g = el("div", { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginTop: "4px" }, d);
+    const useB = actionButton(usable ? "USAR 1" : "NAO CONSUMIVEL", () => this.onUse(this.selSlot, this.selPart ?? undefined), g);
+    setEnabled(useB, usable);
+    if (def?.equip) {
+      const eqB = actionButton(s.eq ? "DESEQUIPAR" : "EQUIPAR", () => this.onInvOp(s.eq ? { op: "unequip" } : { op: "equip", slot: this.selSlot }), g);
+      setEnabled(eqB, true);
+    }
+    actionButton("MOVER", () => ((this.moveFrom = this.selSlot), this.renderInventory()), g);
+    if (canStack) {
+      const spB = actionButton(`DIVIDIR (${this.opQty})`, () => this.onInvOp({ op: "split", slot: this.selSlot, qty: this.opQty }), g);
+      setEnabled(spB, s.qty >= 2 && this.opQty < s.qty && this.slots.some((x) => x === null));
+    }
+    const disB = actionButton(this.confirmDiscard ? `CONFIRMAR: DESCARTAR ${this.opQty}` : `DESCARTAR${s.qty > 1 ? ` (${this.opQty})` : ""}`, () => {
+      if (!this.confirmDiscard) {
+        this.confirmDiscard = true;
+        window.clearTimeout(this.confirmTimer);
+        this.confirmTimer = window.setTimeout(() => ((this.confirmDiscard = false), this.renderDetail()), 4000);
+        return this.renderDetail();
+      }
+      this.confirmDiscard = false;
+      this.onInvOp({ op: "discard", slot: this.selSlot, qty: this.opQty });
+    }, g);
+    disB.style.background = this.confirmDiscard ? "#5a2a26" : C.bg3;
+    disB.style.borderColor = this.confirmDiscard ? C.bad : C.line;
+    const hint = usable && this.selSlot < 9 ? `Atalho de uso: tecla ${this.selSlot + 1}. ` : "";
+    el("div", { color: C.dim, fontSize: "10px", marginTop: "4px" }, d, `${hint}Descartar destroi o item (nao vai para o chao).`);
+  }
+
+  // Comparar com o equipado (ou com a arma que o servidor esta usando). So leitura.
+  private renderCompare(d: HTMLElement, s: ItemStack): void {
+    let ref: ItemStack | null = null;
+    const eq = this.slots.findIndex((x) => x?.eq);
+    if (eq >= 0) ref = this.slots[eq];
+    else if (this.weapon) ref = this.slots.find((x) => x?.id === this.weapon) ?? null;
+    if (!ref || ref === s) return;
+    const rows = compareStacks(s, ref);
+    if (!rows) return;
+    const box = el("div", { margin: "0 0 6px", padding: "5px 6px", background: C.bg3, border: `1px solid ${C.line}`, borderRadius: "3px" }, d);
+    el("div", { color: C.dim, fontSize: "10px", marginBottom: "3px" }, box, `Comparar com ${itemName(ref.id)} (${s.id === ref.id ? "mesmo item" : eq >= 0 ? "equipado" : "em uso"})`);
+    for (const r of rows) {
+      const line = el("div", { display: "flex", justifyContent: "space-between", fontSize: "11px" }, box);
+      el("span", {}, line, r.label);
+      el("span", { color: r.better === "mine" ? C.ok : r.better === "worn" ? C.bad : C.dim }, line, `${r.mine}  x  ${r.worn}`);
+    }
   }
 
   setInventory(m: InventoryUpdateMsg): void {
-    const key = JSON.stringify(m.slots);
+    const key = JSON.stringify([m.slots, m.weight, m.maxWeight]);
     if (key === this.invKey) return; // o servidor reenvia a cada 2 s: so refaz se mudou
     this.invKey = key;
     this.slots = m.slots;
+    const w = m.weight ?? m.slots.reduce((n, x) => n + (x && ITEMS[x.id] ? ITEMS[x.id].weight * x.qty : 0), 0);
+    this.weightInfo = { w, max: m.maxWeight ?? MAX_CARRY_WEIGHT };
+    if (this.moveFrom >= 0 && !this.slots[this.moveFrom]) this.moveFrom = -1; // o item de origem sumiu
     this.renderHotbar();
     this.renderInventory();
     this.renderCraft();
@@ -351,7 +503,8 @@ export class SurvivalUi {
     if (key === this.hotKey) return;
     this.hotKey = key;
     this.hotbar.textContent = "";
-    const wSlot = this.weapon ? this.slots.findIndex((s) => s?.id === this.weapon) : -1;
+    const eqSlot = this.slots.findIndex((x) => x?.eq);
+    const wSlot = eqSlot >= 0 ? eqSlot : this.weapon ? this.slots.findIndex((x) => x?.id === this.weapon) : -1;
     for (let i = 0; i < Math.min(HOTBAR, this.slots.length); i++) {
       const s = this.slots[i];
       const cell = el("div", { position: "relative", width: "36px", height: "36px", background: "rgba(14,17,14,0.85)", border: `1px solid ${i === wSlot ? C.lineHi : C.line}`, borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", boxShadow: i === wSlot ? `inset 0 0 0 1px ${C.lineHi}` : "none", userSelect: "none" }, this.hotbar);
@@ -359,7 +512,7 @@ export class SurvivalUi {
       if (s) {
         cell.appendChild(document.createTextNode(icon(s.id)));
         el("div", { position: "absolute", right: "2px", bottom: "0", fontSize: "9px", fontWeight: "bold" }, cell, String(s.qty));
-        cell.title = itemName(s.id) + (i === wSlot ? " (arma em uso)" : "");
+        cell.title = itemName(s.id) + (i === wSlot ? (s.eq ? " (equipado)" : " (arma em uso)") : "");
         cell.onclick = (): void => this.onUse(i, this.selPart ?? undefined);
       }
     }
