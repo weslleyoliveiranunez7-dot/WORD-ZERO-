@@ -1,5 +1,13 @@
 # Changelog
 
+## Extra - Sistema de saúde e ferimentos (2026-11-16)
+- **Ferimentos** (`shared/injuries.ts`): corte, perfuração, mordida, fratura, queimadura e contusão em 4 partes do corpo, com sangramento, infecção, dor e recuperação. Zumbis mordem/cortam, lança perfura, porrete/punho machuca; cabeça = mais grave, tronco = sangra mais.
+- **Efeitos**: pernas feridas deixam mais lento; braços feridos e dor enfraquecem o golpe; sangramento e infecção bloqueiam a regeneração e tiram vida; feridas cicatrizam sozinhas.
+- **Itens**: Curativo, Tala, Analgésico, Antibiótico, Antisséptico, Kit de primeiros socorros; Bandagem estanca e cobre. Receitas: curativo, tala, kit. Loot de zumbi.
+- **Tratamento**: usar o item trata a ferida mais urgente ou a parte tocada no corpo (`REQUEST_USE_ITEM.part`).
+- **Salvar**: `PlayerSave.inj` (opcional). **Protocolo 9**. **Cliente**: corpo por parte, lista de feridas com dicas, faixa de avisos.
+- Verificado: 224 testes de `shared` (35 novos), typecheck de `shared`. NÃO verificado: servidor real, bots/workflow, cliente no celular.
+
 ## Etapa 16 - Menu inicial, APK e GitHub Pages (2026-11-15)
 - **Tela inicial** (`ui/MainMenu.ts`, `TitleScreen`): só a logo e "TOQUE PARA COMEÇAR" (toque, Enter ou Espaço); mostra "Servidor: online / sem resposta". Substitui a tela antiga da `BootScene`.
 - **Menu de servidores** no estilo da referência (grafite escuro, vermelho da logo, aba JOGAR, lateral com categorias, lista em linhas com jogadores / temporada / status): `MenuScreen`. Mesma lógica da Etapa 13 (lista de `/servers`, atualiza a cada 5 s, lotado desabilitado, último servidor marcado, aviso de lotado/fim de temporada). Lateral: SERVIDORES, ÚLTIMO (CONTINUAR) e OFFLINE (mapa de teste, que antes era um botão da tela inicial). Se a lista falhar, aparece ENTRAR NO SERVIDOR PADRÃO. `ServerListScene` e `BootScene` viraram cascas finas.

@@ -20,6 +20,23 @@ Etapa atual: **Etapa 10 (Crafting) - código escrito; 25 testes novos de `shared
 (Etapa 4: usuário informou que o workflow passou, incluindo os 2 bots; teste em 2 aparelhos reais não foi feito, usuário optou por pular.)
 (Etapa 3: usuário relatou 10-20 FPS no celular; correção por textura enviada, resultado não informado.)
 
+## EXTRA - Sistema de saúde e ferimentos (Etapa 6b) - 2026-11-16
+**Status: código escrito; 35 testes novos (`injuries.test.ts`) + os 189 antigos passam (224 no total, shim Node); typecheck de `shared` limpo. Servidor Colyseus REAL, `survivor.ts`/`attacker.ts`/`duel.ts` e o cliente (painel do corpo, faixa de avisos) AINDA NÃO rodados.**
+O que existe (tudo no servidor, o cliente só mostra; valores provisórios, balancear jogando):
+- `packages/shared/src/injuries.ts`: `InjurySim` por jogador. 6 tipos (corte, perfuração, mordida, fratura, queimadura, contusão) x 3 gravidades x 4 partes (cabeça, tronco, braços, pernas).
+- Golpe/mordida: a vida cai na hora como antes; ALÉM disso pode abrir uma ferida (sorteio parte -> chance -> tipo). Cabeça sobe 1 nível de gravidade; tronco sangra mais; fratura só em braço/perna (ou costela grave). Zumbi = mordida (70%) ou corte; lança = perfuração; porrete/punho = contusão ou fratura.
+- Sangramento tira vida por segundo e bloqueia a regeneração natural; ferida aberta/queimadura sem cobrir infecta com o tempo (mordida ~10 min); infectada tira vida e não cicatriza. Dor sobe com as feridas (reduz velocidade e golpe). Corte leve sem tratar estanca sozinho em 90 s.
+- Efeitos por parte: pernas feridas = mais lento; braços feridos = menos dano e mais recarga (aplicado em `performAttack`); `PlayerLife.speedMul` junta fome/energia e ferimentos.
+- Recuperação: feridas cicatrizam sozinhas (mais rápido coberta/imobilizada, parado e alimentado; fratura sem tala quase não cura) e somem.
+- Itens novos: Curativo, Tala, Analgésico, Antibiótico, Antisséptico, Kit de primeiros socorros; Bandagem agora estanca tudo + cobre (cura só +10 de vida). Fabricáveis: curativo, tala, kit (bancada). Loot de zumbi: todos, com chances baixas. `MedicalEffects` em `items.ts`.
+- Tratar: usar o item. O servidor trata UMA ferida (a mais urgente) ou a parte escolhida no corpo (`REQUEST_USE_ITEM.part`); o kit trata todas. Item sem efeito não é gasto.
+- Queimadura: única fonte hoje = ser atingido por criatura com a tocha ACESA (20%). `PlayerLife.scorch()` é o gancho para fogueira/explosão futuras.
+- Salvar: `PlayerSave.inj` opcional (saves antigos valem; dado de ferida inválido é descartado sem derrubar o save). Morte e reaparecer limpam as feridas. Jogador desconectado não sangra (mesma regra da fome).
+- Protocolo 9: `PLAYER_STATE` ganhou `body`, `injuries`, `pain`, `bleeding`, `painkiller`. Cliente: corpo colorido por parte (tocar escolhe o alvo), lista de feridas com dica do que usar, faixa de avisos sobre a barra de atalhos.
+Teste real pendente: abrir o jogo, levar mordida de zumbi, ver sangrar, usar bandagem/curativo, quebrar perna e usar tala, esperar infecção e usar antibiótico; conferir se a faixa de avisos não cobre outros botões no A04.
+Arquivos: novos `packages/shared/src/{injuries,injuries.test}.ts`; alterados `packages/shared/src/{items,crafting,mobs,survival,life,combat,persist,protocol,security,index}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/web/src/{ui/SurvivalUi.ts,ui/theme.ts,net/NetClient.ts,game/GameScene.ts}`, `PROGRESSO.md`, `CHANGELOG.md`. Fora do zip: nada. Apagados: nenhum.
+(Se o `verificar.yml` roda `survivor`/`attacker`: o teste "item sem efeito não é gasto" da bandagem continua valendo com vida cheia e sem ferida.)
+
 ## Regras que valem sempre (resumo do Documento Mestre)
 - Executar UMA etapa por vez; só avançar após teste e aprovação do usuário.
 - Servidor é autoritativo; cliente só envia intenções.
