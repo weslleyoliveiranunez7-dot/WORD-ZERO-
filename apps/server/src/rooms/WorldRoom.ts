@@ -52,6 +52,8 @@ import {
 } from "@worldzero/shared";
 import { type PlayerStore } from "../store";
 import { characterId, structuresId, type WorldRegistry } from "../worlds";
+import type { SeasonManager } from "../seasons";
+import { JOIN_ERROR_SEASON_CLOSED, alertThreshold, seasonRemainingMs, type SeasonRecord, type SeasonUpdateMsg } from "@worldzero/shared";
 import { recoverFromSnapshots, type Recovered } from "../recovery";
 
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
@@ -102,7 +104,14 @@ export class WorldRoom extends Room {
   // Etapa 13: este mundo (servidor). Cada mundo tem a SUA sala (o registro garante no maximo uma) e os SEUS registros salvos.
   private worldId = DEFAULT_WORLD_ID;
   private registry?: WorldRegistry;
-  private structuresKey = structuresId(DEFAULT_WORLD_ID);
+  private structuresKey = structuresId(DEFAULT_WORLD_ID, 1);
+  // Etapa 14: temporada. A sala nasce de UMA temporada (seed e ids de gravacao). Se a temporada deixa de ser ACTIVE (ou muda), a sala fica
+  // "selada": recusa acoes, nao grava mais nada (tudo vai ser apagado) e e fechada pelo gerenciador depois do aviso final.
+  private seasons?: SeasonManager;
+  private seasonN = 1;
+  private sealed = false;
+  private lastAlert: number | null = null;
+  private lastSeasonSent = 0;
   private activeKeys = new Map<string, string>(); // keyId -> sessionId (um personagem so entra uma vez por vez)
   // Etapa 11: construcoes. So o servidor cria/abre/danifica; `structuresReady` so vira true depois de LER o armazenamento
   // (construir antes disso e gravar por cima apagaria as bases de todo mundo).
@@ -113,20 +122,29 @@ export class WorldRoom extends Room {
   private structuresLastTry = 0;
   private structuresLastSnap = 0;
 
-  onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore; registry?: WorldRegistry; world?: unknown }): void {
+  onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore; registry?: WorldRegistry; seasons?: SeasonManager; world?: unknown }): void {
     this.store = options.store;
     this.registry = options.registry;
     // Mundo desta sala: o que o jogador escolheu na lista (so se estiver cadastrado) ou o padrao. Sem isso (testes antigos) ela vira o mundo padrao.
     const asked = typeof options.world === "string" && WORLD_ID_PATTERN.test(options.world) ? options.world : undefined;
     if (options.world !== undefined && !asked) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "mundo desconhecido");
     this.worldId = asked ?? this.registry?.defaultId ?? DEFAULT_WORLD_ID;
-    this.structuresKey = structuresId(this.worldId);
+    this.seasons = options.seasons;
     if (this.registry) {
       // UMA sala por mundo (sincrono, antes de qualquer await): se ja existe, este mundo esta lotado (a sala dele ficou trancada
       // e o Colyseus tentou abrir outra); se o mundo nao esta cadastrado, nao abre sala nenhuma.
       if (!this.registry.has(this.worldId)) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "mundo desconhecido");
-      if (!this.registry.claim(this.worldId, this.roomId)) throw new ServerError(JOIN_ERROR_FULL, "servidor lotado");
+      // Etapa 14: so abre sala de temporada ACTIVE; a seed do mapa e a da temporada (cada temporada, um mapa).
+      if (this.seasons) {
+        const rec = this.seasons.current(this.worldId);
+        if (!rec || !this.seasons.active(this.worldId)) throw new ServerError(JOIN_ERROR_SEASON_CLOSED, "temporada encerrada");
+        this.seasonN = rec.n;
+        this.world = new ChunkedWorld(rec.seed);
+        this.lastAlert = alertThreshold(seasonRemainingMs(rec, Date.now())); // nao reenvia alerta que ja passou
+      }
+      if (!this.registry.claim(this.worldId, this.roomId, () => void this.disconnect())) throw new ServerError(JOIN_ERROR_FULL, "servidor lotado");
     }
+    this.structuresKey = structuresId(this.worldId, this.seasonN);
     this.structures = new StructureWorld(this.world.width, this.world.height, this.world.tileSize);
     this.world.extraSolid = this.structures.solidAt; // colisao de jogadores e criaturas
     this.world.extraOpaque = this.structures.opaqueAt; // linha de visao (janela deixa ver)
@@ -281,8 +299,9 @@ export class WorldRoom extends Room {
     if (!join || join.protocol !== PROTOCOL_VERSION) throw new ServerError(4001, "versao de protocolo incompativel");
     if (join.world !== undefined && join.world !== this.worldId) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "sala de outro mundo"); // entrada direta numa sala que nao e a do mundo pedido
     if (this.players.size >= this.maxClients) throw new ServerError(JOIN_ERROR_FULL, "servidor lotado"); // as vagas de quem esta reconectando contam
+    if (this.seasons && (this.sealed || !this.seasons.active(this.worldId) || this.seasons.current(this.worldId)?.n !== this.seasonN)) throw new ServerError(JOIN_ERROR_SEASON_CLOSED, "temporada encerrada");
     if (!join.key || !this.store) return {};
-    const keyId = characterId(join.key, this.worldId);
+    const keyId = characterId(join.key, this.worldId, this.seasonN);
     const other = this.activeKeys.get(keyId);
     if (other && this.players.has(other)) throw new ServerError(DUPLICATE_SESSION_CODE, "personagem ja esta conectado");
     let raw: unknown | null;
@@ -361,9 +380,48 @@ export class WorldRoom extends Room {
       lastSnap: Date.now(),
     });
     if (keyId) this.activeKeys.set(keyId, client.sessionId);
+    this.sendSeason(client);
     if (keyId) this.audit("entrou", keyId, { restaurado: !!auth?.save });
     console.log(`[WorldRoom] entrou: ${client.sessionId}${auth?.save ? " (personagem restaurado)" : ""} (${this.players.size}/${this.maxClients}) mundo ${this.worldId}`);
     this.publish();
+  }
+
+  // Etapa 14: mensagem do relogio da temporada (so o servidor define; o cliente so mostra).
+  private seasonMsg(rec: SeasonRecord, now: number, alert?: number): SeasonUpdateMsg {
+    const m: SeasonUpdateMsg = { n: rec.n, seed: rec.seed, status: rec.status, endsAt: rec.endsAt, now };
+    if (alert !== undefined) m.alert = alert;
+    return m;
+  }
+
+  private sendSeason(client: Client): void {
+    const rec = this.seasons?.current(this.worldId);
+    if (rec) client.send("SEASON_UPDATE", this.seasonMsg(rec, Date.now()));
+  }
+
+  private seasonTick(now: number): void {
+    const rec = this.seasons?.current(this.worldId);
+    if (!rec) return;
+    if (!this.sealed && (rec.n !== this.seasonN || rec.status !== "ACTIVE")) {
+      this.sealed = true;
+      this.lastSeasonSent = 0;
+      console.log(`[WorldRoom] ${this.worldId}: temporada ${this.seasonN} encerrando: sala selada`);
+    }
+    if (this.sealed) {
+      if (now - this.lastSeasonSent >= 1000) {
+        this.lastSeasonSent = now;
+        this.broadcast("SEASON_UPDATE", this.seasonMsg(rec, now));
+      }
+      return;
+    }
+    const t = alertThreshold(seasonRemainingMs(rec, now));
+    if (t !== null && (this.lastAlert === null || t < this.lastAlert)) {
+      this.lastAlert = t;
+      this.lastSeasonSent = now;
+      this.broadcast("SEASON_UPDATE", this.seasonMsg(rec, now, t));
+    } else if (now - this.lastSeasonSent >= 30_000) {
+      this.lastSeasonSent = now;
+      this.broadcast("SEASON_UPDATE", this.seasonMsg(rec, now)); // batida: cobre quem reconectou e corrige a deriva do relogio
+    }
   }
 
   // Etapa 13: avisa o cadastro de mundos (populacao e se o mundo ja carregou as bases). A lista de servidores le so de la.
@@ -398,7 +456,7 @@ export class WorldRoom extends Room {
   // Salva sem travar o jogo: uma gravacao por vez por jogador; erro so vai para o log (e a mudanca fica "por gravar": tenta de novo).
   // `reason`: evento importante (morte, saida, desligamento): alem de gravar, guarda um snapshot de historico.
   private async persist(p: PlayerEntry, reason?: string): Promise<void> {
-    if (!p.keyId || !this.store) return;
+    if (!p.keyId || !this.store || this.sealed) return; // sala selada: os dados desta temporada vao ser apagados, nao gravar por cima
     if (p.saving) {
       if (reason) p.pendingReason = reason; // nunca duas gravacoes do mesmo personagem ao mesmo tempo (a ordem de chegada no banco nao e garantida)
       return;
@@ -484,7 +542,7 @@ export class WorldRoom extends Room {
   }
 
   private async persistStructures(reason?: string): Promise<void> {
-    if (!this.store || !this.structuresReady || this.structuresSaving) return;
+    if (!this.store || !this.structuresReady || this.structuresSaving || this.sealed) return;
     this.structuresSaving = true;
     this.structuresLastSave = Date.now();
     this.structures.dirty = false; // mudancas durante a gravacao marcam de novo
@@ -561,6 +619,7 @@ export class WorldRoom extends Room {
   private admit(client: Client): PlayerEntry | null {
     const p = this.players.get(client.sessionId);
     if (!p) return null;
+    if (this.sealed) return null; // temporada fechando: nenhuma acao nova no mundo
     if (!p.guard.allow(Date.now())) {
       this.violation(client, p, "excesso_de_mensagens", 1);
       return null;
@@ -636,6 +695,8 @@ export class WorldRoom extends Room {
   private update(dtMs: number): void {
     const dt = dtMs / 1000;
     const now = Date.now();
+    this.seasonTick(now);
+    if (this.sealed) return; // selada: o mundo congela ate o gerenciador fechar a sala
     this.loot.tick(now);
     if (!this.structuresReady && now - this.structuresLastTry >= STRUCTURES_RETRY_MS) void this.loadStructures();
     if (this.structures.dirty && now - this.structuresLastSave >= STRUCTURES_SAVE_MS) void this.persistStructures();
