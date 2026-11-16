@@ -1,0 +1,62 @@
+name: APK debug (Android)
+# Gera um APK DEBUG (para teste/instalacao direta). NAO cria release e NAO publica nada: o APK fica como arquivo do workflow.
+# Roda so quando voce mandar: Actions > "APK debug (Android)" > Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "URL do servidor (https://...). Vazio = servidor padrao do Render."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - run: pnpm install --no-frozen-lockfile
+      - name: Build do cliente web
+        env:
+          VITE_SERVER_URL: ${{ inputs.server_url }}
+        run: pnpm --filter @worldzero/web build
+
+      - name: Capacitor - criar o projeto Android
+        working-directory: mobile
+        run: |
+          npm install --no-audit --no-fund
+          npx cap add android
+          # jogo deitado (o app abre na horizontal, girando entre os dois lados)
+          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' android/app/src/main/AndroidManifest.xml
+          grep -n 'screenOrientation' android/app/src/main/AndroidManifest.xml
+
+      - name: Icone e tela de abertura (a partir da logo)
+        working-directory: mobile
+        run: npx capacitor-assets generate --android
+
+      - name: Copiar o cliente para o app e compilar o APK debug
+        working-directory: mobile
+        run: |
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Guardar o APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WORLD-ZERO-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
