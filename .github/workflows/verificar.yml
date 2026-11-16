@@ -144,6 +144,15 @@ jobs:
           cd apps/server
           WORLDS_PORT=2572 pnpm exec tsx src/worldcheck.ts 2>&1 | tee ../../servidores.log
 
+      - name: "Teste de temporada (relogio acelerado, wipe, recuperacao de falha) - arquivos e PostgreSQL real"
+        id: temporada
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          cd apps/server
+          pnpm exec tsx src/seasoncheck.ts 2>&1 | tee ../../temporada.log
+          DATABASE_URL=postgres://wz:wz@localhost:5432/wz DATABASE_SSL=disable pnpm exec tsx src/seasoncheck.ts 2>&1 | tee -a ../../temporada.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -209,6 +218,11 @@ jobs:
             echo "### Teste de servidores (esperado: TODOS OK)"
             echo '```'
             cat servidores.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de temporada (esperado: TODOS OS TESTES DE TEMPORADA PASSARAM, 2x)"
+            echo '```'
+            cat temporada.log 2>/dev/null || echo "(sem log)"
             echo '```'
             echo ""
             echo "### Log do servidor"
