@@ -135,6 +135,13 @@ jobs:
           cd apps/server
           DATABASE_URL=postgres://wz:wz@localhost:5432/wz DATABASE_SSL=disable RESTART_PORT=2571 pnpm exec tsx src/restart.ts 2>&1 | tee ../../reinicio-postgres.log
 
+      - name: "Teste de servidores (2 mundos, lista, lotado, mundos independentes, reconexao)"
+        id: servidores
+        run: |
+          set -o pipefail
+          cd apps/server
+          WORLDS_PORT=2572 pnpm exec tsx src/worldcheck.ts 2>&1 | tee ../../servidores.log
+
       - name: Salvar pnpm-lock.yaml no repositorio
         if: success()
         run: |
@@ -160,6 +167,7 @@ jobs:
             echo "- Persistencia (arquivos + PostgreSQL, migracoes, snapshots, backup): ${{ steps.persistencia.outcome }}"
             echo "- Reinicio do servidor (arquivos): ${{ steps.reinicio_arquivos.outcome }}"
             echo "- Reinicio do servidor (PostgreSQL): ${{ steps.reinicio_postgres.outcome }}"
+            echo "- Servidores (lista, mundos, limite de jogadores, lotado, reconexao): ${{ steps.servidores.outcome }}"
             echo ""
             echo "### Logs dos bots"
             echo '```'
@@ -194,6 +202,11 @@ jobs:
             echo "### Teste de reinicio - PostgreSQL (esperado: TODOS OK)"
             echo '```'
             cat reinicio-postgres.log 2>/dev/null || echo "(sem log)"
+            echo '```'
+            echo ""
+            echo "### Teste de servidores (esperado: TODOS OK)"
+            echo '```'
+            cat servidores.log 2>/dev/null || echo "(sem log)"
             echo '```'
             echo ""
             echo "### Log do servidor"
