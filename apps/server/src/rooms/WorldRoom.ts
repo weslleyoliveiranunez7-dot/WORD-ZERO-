@@ -2,6 +2,11 @@ import { Client, Room, ServerError } from "colyseus";
 import {
   CLIENT_MESSAGES,
   ChunkedWorld,
+  DEFAULT_WORLD_ID,
+  JOIN_ERROR_FULL,
+  JOIN_ERROR_UNKNOWN_WORLD,
+  MAX_PLAYERS_PER_WORLD,
+  WORLD_ID_PATTERN,
   KICK_CODE,
   LootWorld,
   MobWorld,
@@ -45,7 +50,8 @@ import {
   type PlayerStateMsg,
   type WorldSnapshot,
 } from "@worldzero/shared";
-import { keyToId, type PlayerStore } from "../store";
+import { type PlayerStore } from "../store";
+import { characterId, structuresId, type WorldRegistry } from "../worlds";
 import { recoverFromSnapshots, type Recovered } from "../recovery";
 
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
@@ -53,7 +59,6 @@ const INVENTORY_HEARTBEAT_MS = 2000;
 const LOOT_HEARTBEAT_MS = 2000;
 const AUTOSAVE_MS = 30_000;
 const DUPLICATE_SESSION_CODE = 4002;
-const STRUCTURES_ID = "world-structures"; // registro unico das estruturas no mesmo armazenamento dos personagens (ids de jogador sao sha256 hex: sem colisao)
 const STRUCTURES_SAVE_MS = 5000; // no maximo 1 gravacao a cada 5 s (so se algo mudou)
 const STRUCTURES_RETRY_MS = 10_000;
 const CRITICAL_SAVE_MS = 2000; // inventario mudou (coleta, fabricacao, construcao, item usado...): grava em ate ~2 s, sem esperar o autosave de 30 s
@@ -94,6 +99,10 @@ export class WorldRoom extends Room {
   private survivalScale = 1;
   private joined = 0;
   private store?: PlayerStore;
+  // Etapa 13: este mundo (servidor). Cada mundo tem a SUA sala (o registro garante no maximo uma) e os SEUS registros salvos.
+  private worldId = DEFAULT_WORLD_ID;
+  private registry?: WorldRegistry;
+  private structuresKey = structuresId(DEFAULT_WORLD_ID);
   private activeKeys = new Map<string, string>(); // keyId -> sessionId (um personagem so entra uma vez por vez)
   // Etapa 11: construcoes. So o servidor cria/abre/danifica; `structuresReady` so vira true depois de LER o armazenamento
   // (construir antes disso e gravar por cima apagaria as bases de todo mundo).
@@ -104,14 +113,26 @@ export class WorldRoom extends Room {
   private structuresLastTry = 0;
   private structuresLastSnap = 0;
 
-  onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore }): void {
+  onCreate(options: { maxPlayers?: number; survivalScale?: number; store?: PlayerStore; registry?: WorldRegistry; world?: unknown }): void {
     this.store = options.store;
+    this.registry = options.registry;
+    // Mundo desta sala: o que o jogador escolheu na lista (so se estiver cadastrado) ou o padrao. Sem isso (testes antigos) ela vira o mundo padrao.
+    const asked = typeof options.world === "string" && WORLD_ID_PATTERN.test(options.world) ? options.world : undefined;
+    if (options.world !== undefined && !asked) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "mundo desconhecido");
+    this.worldId = asked ?? this.registry?.defaultId ?? DEFAULT_WORLD_ID;
+    this.structuresKey = structuresId(this.worldId);
+    if (this.registry) {
+      // UMA sala por mundo (sincrono, antes de qualquer await): se ja existe, este mundo esta lotado (a sala dele ficou trancada
+      // e o Colyseus tentou abrir outra); se o mundo nao esta cadastrado, nao abre sala nenhuma.
+      if (!this.registry.has(this.worldId)) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "mundo desconhecido");
+      if (!this.registry.claim(this.worldId, this.roomId)) throw new ServerError(JOIN_ERROR_FULL, "servidor lotado");
+    }
     this.structures = new StructureWorld(this.world.width, this.world.height, this.world.tileSize);
     this.world.extraSolid = this.structures.solidAt; // colisao de jogadores e criaturas
     this.world.extraOpaque = this.structures.opaqueAt; // linha de visao (janela deixa ver)
     void this.loadStructures();
     this.mobs.populate(this.world);
-    this.maxClients = options.maxPlayers ?? this.maxClients;
+    this.maxClients = Math.min(options.maxPlayers ?? this.maxClients, MAX_PLAYERS_PER_WORLD); // limite de 50 por mundo: nao existe configuracao que passe disso
     this.survivalScale = options.survivalScale ?? 1;
 
     this.onMessage("PLAYER_INPUT", (client, raw) => {
@@ -258,8 +279,10 @@ export class WorldRoom extends Room {
   async onAuth(_client: Client, options: unknown): Promise<{ keyId?: string; save?: PlayerSave }> {
     const join = parseJoinOptions(options);
     if (!join || join.protocol !== PROTOCOL_VERSION) throw new ServerError(4001, "versao de protocolo incompativel");
+    if (join.world !== undefined && join.world !== this.worldId) throw new ServerError(JOIN_ERROR_UNKNOWN_WORLD, "sala de outro mundo"); // entrada direta numa sala que nao e a do mundo pedido
+    if (this.players.size >= this.maxClients) throw new ServerError(JOIN_ERROR_FULL, "servidor lotado"); // as vagas de quem esta reconectando contam
     if (!join.key || !this.store) return {};
-    const keyId = keyToId(join.key);
+    const keyId = characterId(join.key, this.worldId);
     const other = this.activeKeys.get(keyId);
     if (other && this.players.has(other)) throw new ServerError(DUPLICATE_SESSION_CODE, "personagem ja esta conectado");
     let raw: unknown | null;
@@ -339,7 +362,13 @@ export class WorldRoom extends Room {
     });
     if (keyId) this.activeKeys.set(keyId, client.sessionId);
     if (keyId) this.audit("entrou", keyId, { restaurado: !!auth?.save });
-    console.log(`[WorldRoom] entrou: ${client.sessionId}${auth?.save ? " (personagem restaurado)" : ""} (${this.players.size}/${this.maxClients})`);
+    console.log(`[WorldRoom] entrou: ${client.sessionId}${auth?.save ? " (personagem restaurado)" : ""} (${this.players.size}/${this.maxClients}) mundo ${this.worldId}`);
+    this.publish();
+  }
+
+  // Etapa 13: avisa o cadastro de mundos (populacao e se o mundo ja carregou as bases). A lista de servidores le so de la.
+  private publish(): void {
+    this.registry?.update(this.worldId, this.roomId, this.players.size, this.structuresReady);
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
@@ -426,7 +455,7 @@ export class WorldRoom extends Room {
     }
     const parse = (raw: unknown): StructureWorld | null => StructureWorld.fromSave(raw, this.world.width, this.world.height, this.world.seed, this.world.tileSize);
     try {
-      const raw = await this.store.load(STRUCTURES_ID);
+      const raw = await this.store.load(this.structuresKey);
       if (raw === null) {
         this.structuresReady = true; // mundo novo, nada construido ainda
         return;
@@ -439,13 +468,13 @@ export class WorldRoom extends Room {
       }
       console.error("[WorldRoom] estruturas salvas invalidas (ou de outra seed): tentando recuperar de um snapshot");
       this.audit("estruturas_invalidas");
-      const rec = await recoverFromSnapshots(this.store, STRUCTURES_ID, parse);
+      const rec = await recoverFromSnapshots(this.store, this.structuresKey, parse);
       if (!rec) {
         console.error("[WorldRoom] nenhum snapshot valido: construcao DESLIGADA, nada sera sobrescrito");
         return;
       }
-      await this.store.snapshot?.(STRUCTURES_ID, "invalido_antes_de_restaurar"); // guarda o quebrado para analise
-      await this.store.save(STRUCTURES_ID, rec.raw); // o snapshot passa a ser o registro atual
+      await this.store.snapshot?.(this.structuresKey, "invalido_antes_de_restaurar"); // guarda o quebrado para analise
+      await this.store.save(this.structuresKey, rec.raw); // o snapshot passa a ser o registro atual
       this.applyStructures(rec.value);
       this.audit("estruturas_recuperadas", undefined, { snapshot: rec.snapshotId, em: rec.at, motivo: rec.reason, ignorados: rec.skipped });
       console.log(`[WorldRoom] estruturas recuperadas do snapshot ${rec.snapshotId} (${rec.at}): ${rec.value.count} tiles`);
@@ -460,11 +489,11 @@ export class WorldRoom extends Room {
     this.structuresLastSave = Date.now();
     this.structures.dirty = false; // mudancas durante a gravacao marcam de novo
     try {
-      await this.store.save(STRUCTURES_ID, this.structures.toSave(this.world.seed));
+      await this.store.save(this.structuresKey, this.structures.toSave(this.world.seed));
       const now = Date.now();
       if (reason || now - this.structuresLastSnap >= SNAPSHOT_MS) {
         this.structuresLastSnap = now;
-        await this.store.snapshot?.(STRUCTURES_ID, reason ?? "periodico");
+        await this.store.snapshot?.(this.structuresKey, reason ?? "periodico");
       }
     } catch (e) {
       this.structures.dirty = true;
@@ -508,9 +537,11 @@ export class WorldRoom extends Room {
     if (p.keyId) this.audit("saiu", p.keyId);
     if (p.keyId && this.activeKeys.get(p.keyId) === sessionId) this.activeKeys.delete(p.keyId);
     this.players.delete(sessionId);
+    this.publish();
   }
 
   async onDispose(): Promise<void> {
+    this.registry?.release(this.worldId, this.roomId); // a sala vai fechar: o mundo volta a ser "vazio" na lista (e reabre ao primeiro jogador)
     for (const p of this.players.values()) {
       await this.idle(p);
       await this.persist(p, "desligamento");
@@ -637,6 +668,7 @@ export class WorldRoom extends Room {
       snaps.push({ id, x: Math.round(p.sim.x * 10) / 10, y: Math.round(p.sim.y * 10) / 10, seq: p.sim.seq, dead: p.life.dead, ...(p.torchOn && !p.life.dead && p.life.inventory.count("torch") > 0 ? { torch: true } : {}) });
     }
     const snapshot: WorldSnapshot = { tick: ++this.tick, players: snaps, mobs: this.mobs.snaps() };
+    if (this.tick % SERVER_TICK_RATE === 0) this.publish(); // 1x por segundo: pega a mudanca "bases carregadas"
     this.broadcast("WORLD_SNAPSHOT", snapshot);
     for (const client of this.clients) {
       const p = this.players.get(client.sessionId);
