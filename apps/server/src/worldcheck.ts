@@ -104,6 +104,11 @@ async function refused(p: Promise<Session>): Promise<string | null> {
   }
 }
 
+// leave() que nunca trava: se a conexao ja caiu, desiste depois de 4 s.
+async function safeLeave(room: Room): Promise<void> {
+  await Promise.race([room.leave(true).catch(() => undefined), sleep(4000)]);
+}
+
 const find = (l: WorldInfo[], id: string): WorldInfo | undefined => l.find((w) => w.id === id);
 
 async function main(): Promise<void> {
@@ -162,6 +167,7 @@ async function main(): Promise<void> {
 
     // ---- 4. vaga volta; mundo desconhecido; sala de outro mundo ----
     await d.room.leave(true);
+    open.splice(open.indexOf(d), 1); // ja saiu: um 2o leave() nunca responderia e travaria o teste
     await sleep(800);
     l = await list();
     check("quem sai libera a vaga (2/3, online)", find(l, "mundo-1")?.players === 2 && find(l, "mundo-1")?.status === "online", `${find(l, "mundo-1")?.players} ${find(l, "mundo-1")?.status}`);
@@ -176,7 +182,7 @@ async function main(): Promise<void> {
     check("pedir mundo-2 numa sala do mundo-1 e RECUSADO", wrongRoom !== null, String(wrongRoom));
 
     // ---- 5. independencia: mesmo personagem, inventario separado por mundo ----
-    for (const s of open.splice(0)) await s.room.leave(true);
+    for (const s of open.splice(0)) await safeLeave(s.room);
     await sleep(1500);
     const key = randomBytes(24).toString("base64url");
     check("mundo-1 usa o id de gravacao antigo; mundo-2 usa outro", characterId(key, "mundo-1") === keyToId(key) && characterId(key, "mundo-2") !== keyToId(key), "ids");
