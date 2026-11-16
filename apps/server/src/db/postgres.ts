@@ -139,6 +139,24 @@ export class PostgresStore implements PlayerStore {
   }
 
   // Para testes e manutencao.
+  // Etapa 14: wipe. starts_with (nao LIKE: `_` do prefixo nao vira curinga). Uma conexao so e uma transacao: ou apaga personagens+snapshots, ou nada.
+  async purge(prefix: string): Promise<number> {
+    if (!SAFE_ID.test(prefix)) throw new Error("prefixo invalido");
+    const c = await this.pool.connect();
+    try {
+      await c.query("begin");
+      await c.query("delete from snapshots where starts_with(record_id, $1)", [prefix]);
+      const r = await c.query("delete from players where starts_with(id, $1)", [prefix]);
+      await c.query("commit");
+      return r.rowCount ?? 0;
+    } catch (e) {
+      await c.query("rollback").catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
   async appliedMigrations(): Promise<number[]> {
     const r = await this.pool.query("select version from schema_migrations order by version");
     return r.rows.map((x) => Number((x as { version: unknown }).version));

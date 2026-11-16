@@ -37,6 +37,9 @@ export interface PlayerStore {
   audit?(ev: AuditEvent): Promise<void>;
   exportAll?(): Promise<BackupFile>;
   importAll?(file: BackupFile): Promise<number>; // devolve quantos registros foram restaurados
+  // Etapa 14 (wipe): apaga TODOS os registros cujo id comeca por `prefix` (e os snapshots deles). Devolve quantos registros foram apagados.
+  // Idempotente: chamar de novo devolve 0. Supabase por REST nao tem (os ids novos ja deixam os antigos inalcancaveis).
+  purge?(prefix: string): Promise<number>;
   close?(): Promise<void>;
 }
 
