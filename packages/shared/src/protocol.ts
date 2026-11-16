@@ -1,12 +1,13 @@
 import type { PieceKind } from "./building";
 import type { RecipeId } from "./crafting";
 import type { ItemStack, Slot } from "./inventory";
+import type { BodyPart, InjuryView } from "./injuries";
 import type { ItemId } from "./items";
 import { WORLD_ID_PATTERN } from "./servers";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
-export const PROTOCOL_VERSION = 8; // 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
+export const PROTOCOL_VERSION = 9; // 9 = ferimentos (PLAYER_STATE.body/injuries/pain/bleeding, REQUEST_USE_ITEM.part); 8 = 8 = tocha visivel para todos (REQUEST_TORCH, PlayerSnap.torch); 7 = Etapa 11 (REQUEST_BUILD, STRUCTURE_UPDATE, CHEST_UPDATE); 6 = Etapa 10 (REQUEST_CRAFT); 5 = Etapa 9 (COMBAT_EVENT, PLAYER_STATE.weapon); 4 = Etapa 8 (mobs, REQUEST_ATTACK); 3 = Etapa 7; 2 = Etapa 6
 
 export const CLIENT_MESSAGES = [
   "PLAYER_INPUT",
@@ -121,6 +122,12 @@ export interface PlayerStateMsg {
   respawnInMs: number; // quando morto: tempo que falta para poder reaparecer
   lost: ItemStack[]; // quando morto: o que foi perdido
   weapon: ItemId | null; // Etapa 9: arma que o SERVIDOR usa nos seus golpes (null = punho)
+  // Etapa 6b: ferimentos (so mostrar; o servidor decide tudo)
+  body: number[]; // condicao 0..100 de [cabeca, tronco, bracos, pernas]
+  injuries: InjuryView[]; // feridas ordenadas por urgencia
+  pain: number; // 0..100 (ja com o efeito do analgesico)
+  bleeding: number; // vida perdida por segundo com todas as feridas (0 = sem sangramento)
+  painkiller: boolean; // analgesico ativo
 }
 
 export interface InventoryUpdateMsg {
@@ -131,6 +138,7 @@ export interface InventoryUpdateMsg {
 export interface UseItemMsg {
   slot: number;
   actionId: number;
+  part?: BodyPart; // Etapa 6b: parte do corpo a tratar (ausente = o servidor escolhe a ferida mais urgente)
 }
 export interface RespawnMsg {
   actionId: number;

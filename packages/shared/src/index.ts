@@ -9,6 +9,7 @@ export * from "./playersim";
 export * from "./items";
 export * from "./inventory";
 export * from "./survival";
+export * from "./injuries";
 export * from "./life";
 export * from "./loot";
 export * from "./persist";

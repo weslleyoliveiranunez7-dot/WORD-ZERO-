@@ -95,7 +95,7 @@ export function performAttack(
   nowMs: number,
   rng: () => number = Math.random,
 ): AttackOutcome {
-  const weapon = bestWeapon(attacker.life.inventory);
+  const weapon = attacker.life.injuries.adjustWeapon(bestWeapon(attacker.life.inventory)); // bracos feridos/dor: menos dano, mais recarga
   const res = attacker.life.startAttack(actionId, nowMs, weapon.cooldownMs);
   if (!res.ok) return { res, events: [] };
 
@@ -111,7 +111,7 @@ export function performAttack(
 
   if (t.kind === "player") {
     const victim = byId.get(t.id);
-    if (!victim || !victim.life.takeHit(weapon.damage, attacker.id, nowMs)) {
+    if (!victim || !victim.life.takeHit(weapon.damage, attacker.id, nowMs, { type: weapon.damageType ?? "blunt", rng })) {
       return { res, events: [{ kind: "miss", attacker: attacker.id, x: r1(attacker.x), y: r1(attacker.y) }] };
     }
     return { res, events: [{ kind: "hit", attacker: attacker.id, victim: victim.id, x: r1(victim.x), y: r1(victim.y), damage: weapon.damage }] };

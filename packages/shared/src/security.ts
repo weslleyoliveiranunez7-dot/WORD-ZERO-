@@ -1,5 +1,6 @@
 import { isPieceKind } from "./building";
 import { isRecipeId } from "./crafting";
+import { isBodyPart } from "./injuries";
 import { parseInput, type BuildMsg, type PlayerInputMsg, type AttackMsg, type CraftMsg, type InteractMsg, type RespawnMsg, type TorchMsg, type UseItemMsg } from "./protocol";
 
 // Etapa 5: regras de seguranca puras (sem rede, sem relogio proprio) para o servidor e para os testes.
@@ -78,11 +79,13 @@ function inspectKeys(raw: unknown, allowed: string[]): { reason: string; weight:
 }
 
 export function inspectUseItem(raw: unknown, slots: number): ActionInspection<UseItemMsg> {
-  const bad = inspectKeys(raw, ["slot", "actionId"]);
+  const bad = inspectKeys(raw, ["slot", "actionId", "part"]);
   if (bad) return { msg: null, ...bad };
-  const { slot, actionId } = raw as Record<string, unknown>;
+  const { slot, actionId, part } = raw as Record<string, unknown>;
   if (!isInt(slot, 0, slots - 1) || !isInt(actionId, 0, MAX_ACTION_ID)) return { msg: null, reason: "valores_invalidos", weight: 3 };
-  return { msg: { slot, actionId } };
+  if (part === undefined) return { msg: { slot, actionId } };
+  if (!isBodyPart(part)) return { msg: null, reason: "valores_invalidos", weight: 3 };
+  return { msg: { slot, actionId, part } };
 }
 
 // REQUEST_TORCH so aceita { on: boolean }.

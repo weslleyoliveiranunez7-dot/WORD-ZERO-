@@ -35,6 +35,7 @@ export class SurvivalSim {
   hunger: number;
   thirst: number;
   energy: number;
+  regenBlocked = false; // Etapa 6b: sangramento ou infeccao impedem a regeneracao natural de vida (quem chama define antes do tick)
   private starveTimer = 0; // segundos seguidos com fome ou sede zerada
 
   constructor(init: Vitals = START_VITALS) {
@@ -78,7 +79,7 @@ export class SurvivalSim {
       if (this.starveTimer > S.starveGraceSec) this.health = clamp(this.health - S.starveDamagePerSec * empty * dt);
     } else {
       this.starveTimer = 0;
-      if (this.hunger >= S.regenMinHungerThirst && this.thirst >= S.regenMinHungerThirst) {
+      if (!this.regenBlocked && this.hunger >= S.regenMinHungerThirst && this.thirst >= S.regenMinHungerThirst) {
         this.health = clamp(this.health + S.regenHealthPerSec * dt);
       }
     }

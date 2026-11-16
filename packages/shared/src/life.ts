@@ -3,6 +3,7 @@ import { HARVEST_COOLDOWN_MS, type LootWorld } from "./loot";
 import { BUILD_COOLDOWN_MS } from "./building";
 import { craftItem } from "./crafting";
 import { Inventory, type ItemStack, type Slot } from "./inventory";
+import { InjurySim, type BodyPart, type DamageType } from "./injuries";
 import { ITEMS } from "./items";
 import { START_VITALS, SurvivalSim } from "./survival";
 
@@ -22,6 +23,7 @@ const fail = (reason: string, weight: number): ActionResult => ({ ok: false, rea
 
 export class PlayerLife {
   survival = new SurvivalSim(START_VITALS);
+  injuries = new InjurySim(); // Etapa 6b: feridas, sangramento, infeccao, dor
   inventory = Inventory.starter();
   deadAtMs: number | null = null;
   lost: ItemStack[] = []; // o que o jogador perdeu na ultima morte (para a tela de morte)
@@ -40,10 +42,21 @@ export class PlayerLife {
     return this.deadAtMs !== null;
   }
 
+  // Velocidade final: fome/energia (survival) x ferimentos (pernas + dor).
+  get speedMul(): number {
+    return Math.max(0.3, this.survival.speedMul * this.injuries.speedMul);
+  }
+
   // Avanca o tempo de jogo. Devolve true no instante em que o jogador MORRE.
   tick(gameDtSeconds: number, moving: boolean, nowMs: number): boolean {
     if (this.dead) return false;
+    this.survival.regenBlocked = this.injuries.regenBlocked;
     this.survival.tick(gameDtSeconds, moving);
+    if (gameDtSeconds > 0 && !this.survival.dead) {
+      const fed = this.survival.hunger >= 20 && this.survival.thirst >= 20;
+      const d = this.injuries.tick(gameDtSeconds, moving, fed); // sangramento e infeccao tiram vida
+      if (d > 0) this.survival.damage(d);
+    }
     if (this.survival.dead) {
       this.die(nowMs);
       return true;
@@ -58,6 +71,7 @@ export class PlayerLife {
     this.deadAtMs = nowMs;
     this.deaths++;
     this.lost = this.inventory.clear();
+    this.injuries = new InjurySim();
     this.invVersion++;
   }
 
@@ -73,13 +87,16 @@ export class PlayerLife {
     return true;
   }
 
-  useItem(slot: number, actionId: number, nowMs: number): ActionResult {
+  useItem(slot: number, actionId: number, nowMs: number, part?: BodyPart): ActionResult {
     if (this.dead) return fail("morto", 1);
     if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
     if (nowMs - this.lastUseMs < USE_COOLDOWN_MS) return fail("em_recarga", 1);
     const s: Slot = Number.isInteger(slot) && slot >= 0 && slot < this.inventory.size ? this.inventory.slots[slot] : null;
     if (!s) return fail("slot_vazio", 2);
-    if (!this.survival.apply(ITEMS[s.id].effects)) return fail("sem_efeito", 0); // nao gasta o item
+    const def = ITEMS[s.id];
+    const treated = def.medical ? this.injuries.treat(def.medical, part) : false; // Etapa 6b: tratamento de feridas
+    const applied = this.survival.apply(def.effects);
+    if (!treated && !applied) return fail("sem_efeito", 0); // nao gasta o item
     this.inventory.removeFromSlot(slot, 1);
     this.lastUseMs = nowMs;
     this.invVersion++;
@@ -103,12 +120,27 @@ export class PlayerLife {
 
   // Etapa 9: dano de OUTRO JOGADOR. false = ignorado (ja morto, ja com vida zerada neste tick, protegido ou valor invalido).
   // "Vida zerada neste tick" conta como morto: dois golpes no mesmo instante nao dao dano nem credito duplicado.
-  takeHit(amount: number, byId: string, nowMs: number): boolean {
+  // `src` (Etapa 6b): tipo do golpe; se vier, o golpe tambem pode ferir uma parte do corpo. Sem `src` so tira vida (legado).
+  takeHit(amount: number, byId: string, nowMs: number, src?: { type: DamageType; rng?: () => number }): boolean {
     if (this.dead || this.survival.dead || this.inGrace(nowMs)) return false;
     if (!Number.isFinite(amount) || amount <= 0) return false;
     this.survival.damage(amount);
     this.lastHit = { by: byId, atMs: nowMs };
+    if (src) this.injuries.hurt(src.type, amount, src.rng);
     return true;
+  }
+
+  // Etapa 6b: dano de criatura (mordida/garra). Ignora protecao de reaparecimento, como antes. false = ja morto.
+  takeMobHit(amount: number, rng?: () => number): boolean {
+    if (this.dead || this.survival.dead || !Number.isFinite(amount) || amount <= 0) return false;
+    this.survival.damage(amount);
+    this.injuries.hurt("bite", amount, rng);
+    return true;
+  }
+
+  // Etapa 6b: queimadura nos bracos (chama da tocha). Gancho para fogueira/explosao nas proximas etapas.
+  scorch(sev: 1 | 2 | 3 = 1): void {
+    if (!this.dead) this.injuries.add("burn", "arms", sev);
   }
 
   // Etapa 11: porteiro de toda acao de construcao (vivo, actionId novo, intervalo minimo). A regra de jogo fica em StructureWorld.
@@ -151,6 +183,7 @@ export class PlayerLife {
     if (!this.freshAction(actionId)) return fail("acao_repetida", 0);
     if (this.respawnInMs(nowMs) > 0) return fail("cedo_demais", 1);
     this.survival = new SurvivalSim(START_VITALS);
+    this.injuries = new InjurySim();
     this.inventory = Inventory.starter();
     this.deadAtMs = null;
     this.craftBusyUntilMs = 0;
