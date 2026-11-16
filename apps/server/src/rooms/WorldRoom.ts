@@ -56,6 +56,7 @@ import type { SeasonManager } from "../seasons";
 import { JOIN_ERROR_SEASON_CLOSED, alertThreshold, seasonRemainingMs, type SeasonRecord, type SeasonUpdateMsg } from "@worldzero/shared";
 import { recoverFromSnapshots, type Recovered } from "../recovery";
 
+const TORCH_SCORCH_CHANCE = 0.2; // Etapa 6b: chance de queimadura leve ao ser atingido por criatura com a tocha acesa
 const STATE_HEARTBEAT_MS = 1000; // reenvia o estado mesmo sem mudanca (cobre entrada e reconexao)
 const INVENTORY_HEARTBEAT_MS = 2000;
 const LOOT_HEARTBEAT_MS = 2000;
@@ -166,7 +167,7 @@ export class WorldRoom extends Room {
       if (!p) return;
       const r = inspectUseItem(raw, p.life.inventory.size);
       if (!r.msg) return this.violation(client, p, r.reason, r.weight);
-      this.finish(client, p, "REQUEST_USE_ITEM", p.life.useItem(r.msg.slot, r.msg.actionId, Date.now()));
+      this.finish(client, p, "REQUEST_USE_ITEM", p.life.useItem(r.msg.slot, r.msg.actionId, Date.now(), r.msg.part));
     });
 
     // Etapa 7: coletar recurso / pegar mochila. O alvo e a posicao saem do SERVIDOR, nunca da mensagem.
@@ -493,7 +494,7 @@ export class WorldRoom extends Room {
   private audit(kind: string, player?: string, detail?: unknown): void {
     const st = this.store;
     if (!st?.audit) return;
-    st.audit({ kind, player, detail }).catch((e) => console.error("[WorldRoom] falha ao gravar auditoria", e instanceof Error ? e.message : e));
+    st.audit({ kind, player, detail }).catch((e: unknown) => console.error("[WorldRoom] falha ao gravar auditoria", e instanceof Error ? e.message : e));
   }
 
   // Le as estruturas salvas. Falha ou dado invalido: NAO libera construcao nem grava (tenta de novo a cada 10 s).
@@ -661,13 +662,20 @@ export class WorldRoom extends Room {
       hunger: Math.round(v.hunger),
       thirst: Math.round(v.thirst),
       energy: Math.round(v.energy),
-      speedMul: Math.round(v.speedMul * 100) / 100,
+      speedMul: Math.round(p.life.speedMul * 100) / 100, // fome/energia x ferimentos
       dead: p.life.dead,
       respawnInMs: p.life.respawnInMs(now),
       lost: p.life.lost,
       weapon: bestWeapon(p.life.inventory).item,
+      body: p.life.injuries.bodyView(),
+      injuries: p.life.injuries.views(),
+      pain: p.life.injuries.pain,
+      bleeding: Math.round(p.life.injuries.bleeding * 100) / 100,
+      painkiller: p.life.injuries.painLeft > 0,
     };
-    const key = `${state.health}|${state.hunger}|${state.thirst}|${state.energy}|${state.speedMul}|${state.dead}|${state.weapon}`;
+    // a assinatura das feridas muda por degrau (infeccao/cura de 10 em 10 %), nao a cada decimal: evita reenviar o estado todo tick
+    const injSig = state.injuries.map((i) => `${i.id}.${i.sev}.${i.care}.${i.infected ? 1 : 0}.${Math.floor(i.infection / 10)}.${Math.floor(i.heal / 10)}.${i.bleed > 0 ? 1 : 0}`).join(",");
+    const key = `${state.health}|${state.hunger}|${state.thirst}|${state.energy}|${state.speedMul}|${state.dead}|${state.weapon}|${state.pain}|${state.painkiller}|${state.body.join(",")}|${injSig}`;
     if (force || key !== p.lastStateKey || now - p.lastStateSent >= STATE_HEARTBEAT_MS) {
       p.lastStateKey = key;
       p.lastStateSent = now;
@@ -703,12 +711,18 @@ export class WorldRoom extends Room {
     // criaturas so enxergam jogadores vivos e conectados
     const targets = [];
     for (const [pid, q] of this.players) if (q.connected && !q.life.dead) targets.push({ id: pid, x: q.sim.x, y: q.sim.y });
-    for (const h of this.mobs.tick(dt, now, targets, this.world)) this.players.get(h.playerId)?.life.survival.damage(h.damage);
+    for (const h of this.mobs.tick(dt, now, targets, this.world)) {
+      const q = this.players.get(h.playerId);
+      if (!q) continue;
+      q.life.takeMobHit(h.damage); // tira vida e pode abrir uma ferida (mordida/corte) numa parte do corpo
+      // provisorio: chama da tocha acesa pode queimar os bracos no meio da luta (a mesma funcao servira para fogueira/explosao)
+      if (q.torchOn && q.life.inventory.count("torch") > 0 && Math.random() < TORCH_SCORCH_CHANCE) q.life.scorch(1);
+    }
     const snaps: PlayerSnap[] = [];
     for (const [id, p] of this.players) {
       if (p.life.dead) p.sim.stop();
       else {
-        p.sim.speedMul = p.life.survival.speedMul;
+        p.sim.speedMul = p.life.speedMul;
         const x0 = p.sim.x;
         const y0 = p.sim.y;
         if (p.sim.step(this.world, dt).corrected) console.error(`[WorldRoom] BUG: movimento de ${id} corrigido pelo servidor`);
