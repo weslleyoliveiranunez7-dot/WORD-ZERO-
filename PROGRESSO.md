@@ -4,7 +4,8 @@
 > Atualize este arquivo ao final de CADA etapa.
 
 Última atualização: 2026-11-15
-Etapa atual: **Etapa 13 (Servidores e lista) - código escrito; 8 testes novos de `shared` passam (shim Node), a lógica do cadastro de mundos foi exercitada em Node e o typecheck foi feito só contra stubs de colyseus/phaser. Servidor Colyseus REAL, `worldcheck.ts` e o cliente (tela de servidores) AINDA NÃO rodados (o workflow novo roda `worldcheck`).**
+Etapa atual: **Etapa 14 (Temporada de 7 dias e wipe) - código escrito; 6 testes novos de `shared` (189 no total, shim Node) e `seasoncheck.ts` (27 checagens OK com relógio acelerado e arquivos reais) passam; typecheck só contra stubs. Servidor Colyseus REAL com a sala fechando, `seasoncheck` contra PostgreSQL REAL e o cliente (HUD/lista) AINDA NÃO rodados (o workflow novo roda `seasoncheck` 2x: arquivos e Postgres).**
+(Etapa 13 anterior:) **Etapa 13 (Servidores e lista) - código escrito; 8 testes novos de `shared` passam (shim Node), a lógica do cadastro de mundos foi exercitada em Node e o typecheck foi feito só contra stubs de colyseus/phaser. Servidor Colyseus REAL, `worldcheck.ts` e o cliente (tela de servidores) AINDA NÃO rodados (o workflow novo roda `worldcheck`).**
 (Etapa 12 anterior:) **Etapa 12 (Banco e persistência) - código escrito; testes da camada de armazenamento (arquivos) e do executor de migrações passam aqui; PostgreSQL REAL, servidor Colyseus REAL e o teste de reinício AINDA NÃO rodados (o workflow novo roda tudo, com um Postgres de verdade).**
 (Etapa 11 anterior:) **Etapa 11 (Construção de base) - código escrito; 23 testes novos de `shared` passam (shim Node, 165 no total); servidor REAL, atacante e cliente AINDA NÃO rodados. Aceite pendente: base permanece após desconexão e REINÍCIO do servidor (precisa de teste real com armazenamento).**
 (Etapa 10 anterior:) o usuário não informou o resultado do workflow antes de pedir a Etapa 11; segue como "escrita".
@@ -52,10 +53,32 @@ O usuário NÃO quer reenviar o projeto inteiro. Em cada etapa entregar `WORLD-Z
 | 11 | Construção de base | Escrita; falta o workflow e o aceite de reiniciar o servidor com as bases |
 | 12 | Banco e persistência | Escrita; falta o workflow (Postgres + reinício) e testar com Supabase/Render |
 | 13 | Servidores e lista | Escrita; falta o workflow (`worldcheck`) e testar a tela de servidores no celular |
-| 14 | Temporada de 7 dias e wipe | Pendente |
+| 14 | Temporada de 7 dias e wipe | Escrita; falta o workflow (`seasoncheck` em arquivos e Postgres) e testar no celular (relógio, alertas, wipe com a sala aberta) |
 | 15 | Interface e polimento mobile | Pendente |
 | 16 | APK e GitHub Pages | Pendente |
 | 17 | Teste de carga e lançamento | Pendente |
+
+## O que já foi feito (Etapa 14)
+- `shared/season.ts`: regras puras. Estados `ACTIVE/CLOSING/ARCHIVED/RESETTING`; `seasonSeed(mundo, n)` (FNV, determinística, muda por temporada e mundo); `newSeason`; `alertThreshold` (24 h, 1 h, 10 min, 1 min); `formatRemaining`; `parseSeasonRecord` (valida tudo, registro de outro mundo/adulterado = null); `seasonDurationFromEnv` (`SEASON_LENGTH_SECONDS`, mín. 5 s, só teste); `SeasonUpdateMsg`; código de recusa `4007`.
+- `server/seasons.ts` (`SeasonManager`): relógio no backend (tick de 1 s, 1 passo por mundo de cada vez). Registro `meta_season_<mundo>` gravado ANTES de cada passo. `ACTIVE` vencida -> `CLOSING` (mundo para de aceitar entradas e ações) -> após o aviso final (30 s) pede o fechamento da sala e ESPERA ela morrer -> grava resultado `meta_season_<mundo>_result_<n>` -> `ARCHIVED` -> `RESETTING`: `store.purge('<mundo>_s<n>_')` + 2ª chamada que tem de devolver 0 -> só então grava a temporada `n+1` com seed nova. Falha = fica no estado e repete no próximo ciclo. Ao ligar o servidor retoma qualquer estado. Registro inválido = mundo fechado, nada é criado por cima. Auditoria: `temporada_iniciada/encerrando/arquivada`, `wipe_concluido`.
+- Ids por temporada (`worlds.ts`): `characterId(chave, mundo, n)` e `structuresId(mundo, n)` começam por `<mundo>_s<n>_`. **Mudança de formato: personagens/bases das Etapas 7-13 não são mais lidos.**
+- `purge` em `FileStore` e `PostgresStore` (transação; `starts_with`, sem curinga). `SupabaseStore` (REST) não tem: os ids novos já isolam, mas nada é apagado.
+- `WorldRoom`: abre só com temporada ACTIVE e usa a seed dela; `sealed` quando a temporada deixa de ser ACTIVE (`admit` ignora ações, `persist`/`persistStructures` não gravam, `update` congela o mundo); `SEASON_UPDATE` ao entrar, nos alertas, a cada 30 s e 1/s durante o fechamento. `WorldRegistry.closeRoom`. `/servers` traz `season {n, seed, status, endsAt, now}`.
+- Cliente: `GameScene` usa a seed da temporada (vem da lista; se divergir do servidor, reinicia a cena uma vez), HUD `T<n> <tempo restante>`, avisos de alerta, `ENCERRADA` e volta à lista quando a sala fecha (`NetClient.seasonClosed` evita reconectar). `ServerListScene` mostra a temporada.
+
+## Verificado e não verificado (Etapa 14)
+- Verificado (Node 22 + shim do vitest + `tsc`): 6 testes de `season.test.ts`; `seasoncheck.ts` com arquivos reais: início, nada acontece antes do fim, `CLOSING` sem apagar, sala viva impede o wipe, wipe só de personagem/bases/snapshot daquela temporada (outro mundo, temporada `s10` e dado `meta_*` intactos), resultado arquivado, seed nova, 7 dias, sem temporada 3 duplicada, reinício após o wipe, falha simulada no wipe (fica em `RESETTING`, depois 1 só temporada nova), queda em `RESETTING` retomada sozinha, registro inválido não é sobrescrito, relógio acelerado de verdade (5 s), `purge` recusa prefixo perigoso. Typecheck de `shared` limpo; servidor e cliente só contra stubs.
+- NÃO verificado: `pnpm install`/vitest reais; `PostgresStore.purge` (SQL escrito sem rodar: o 2º passo do `seasoncheck` no workflow prova); servidor Colyseus REAL com a sala selando e fechando (`room.disconnect()` pelo cadastro, código de saída dos clientes, `onDispose` sem gravar), o fluxo ponta a ponta com um cliente real durante o wipe; HUD, avisos e volta à lista no celular; reinício da cena por seed diferente.
+- Limitações / NÃO feito: sem estatísticas/ranking da temporada (só o resultado com datas e seed); sem contas (nada além de `meta_*` para preservar); sem trava entre DOIS processos de servidor no mesmo banco; Render gratuito dorme (o wipe só acontece quando ele acordar); mochilas, recursos e criaturas já não eram salvos (somem ao fechar a sala, o que combina com o wipe); `SEASON_LENGTH_SECONDS` não pode ir para produção; o cliente só reconhece o fim pelo servidor (sem alerta local se estiver offline).
+
+## Critério de aceite da Etapa 14
+"O wipe ocorre sem depender de jogador conectado e sem apagar contas." Só marcar como concluída quando: (1) o workflow `Verificar` passar, incluindo "Teste de temporada" (2 execuções: arquivos e Postgres) e (2) o usuário, com `SEASON_LENGTH_SECONDS=120` e `SEASON_GRACE_SECONDS=20` num servidor de teste, entrar, ver o relógio no HUD e os alertas, ver a temporada acabar, voltar à lista, e entrar de novo numa temporada 2 com mapa diferente e personagem zerado (também com ninguém conectado no fim: o log do servidor deve mostrar `wipe feito`).
+
+## Arquivos desta etapa (Etapa 14) - vão no `WORLD-ZERO-etapa14.zip`
+Novos: `packages/shared/src/{season,season.test}.ts`, `apps/server/src/{seasons,seasoncheck}.ts`
+Alterados: `packages/shared/src/{index,servers}.ts`, `apps/server/src/{index,store,worlds,worldcheck,restart}.ts`, `apps/server/src/db/{types,postgres}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/server/package.json`, `apps/web/src/{net/NetClient.ts,game/GameScene.ts,game/ServerListScene.ts}`, `.env.example`, `HOSPEDAR_SERVIDOR.md`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
+Fora do zip (editar à mão): `.github/workflows/verificar.yml` (passo novo "Teste de temporada" + resumo).
+Apagados: nenhum.
 
 ## O que já foi feito (Etapa 13)
 - `shared/servers.ts`: `WorldDef`/`WorldInfo`/`ServerListResponse`, `WORLD_ID_PATTERN`, `DEFAULT_WORLD_ID` (`mundo-1`), `MAX_WORLDS` (20), códigos de recusa (`4005` mundo desconhecido, `4006` lotado), `worldCapacity` (nunca passa de 50), `worldStatus` (online / iniciando / lotado), `parseWorldDefs` (config `WORLDS`) e `parseServerList` (o cliente valida a lista vinda da rede). `JoinOptions.world` (opcional; id inválido = entrada recusada). `PROTOCOL_VERSION` NÃO mudou (campo opcional).

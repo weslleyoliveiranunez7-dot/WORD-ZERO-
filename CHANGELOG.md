@@ -1,5 +1,15 @@
 # Changelog
 
+## Etapa 14 - Temporada de 7 dias e wipe
+- Relógio da temporada no BACKEND (`apps/server/src/seasons.ts`, `SeasonManager`): estados `ACTIVE -> CLOSING -> ARCHIVED -> RESETTING -> ACTIVE`, cada passo gravado antes de agir (`meta_season_<mundo>`), idempotente e retomável após queda. Roda sem jogador conectado.
+- Ao fim dos 7 dias: sala selada (nenhuma ação, nada é gravado), aviso final de 30 s, sala fechada, resultado arquivado, wipe (personagens, bases, baús, snapshots da temporada) verificado (2ª limpeza = 0) e nova temporada com seed nova. Falha no wipe = mundo fechado e nova tentativa; nunca cria temporada duplicada. Registro de temporada inválido = mundo fechado, nada inventado por cima.
+- Ids de gravação por temporada (`<mundo>_s<n>_...`): nada atravessa o wipe. **Muda o formato**: o que foi salvo nas Etapas 7-13 deixa de ser lido.
+- `PlayerStore.purge(prefixo)` (arquivos e PostgreSQL, em transação).
+- Mapa por temporada: a sala usa a seed da temporada e o cliente gera o mesmo mapa (seed vem de `/servers` e de `SEASON_UPDATE`; se divergir, a cena reinicia uma vez).
+- `SEASON_UPDATE` (já existia na lista, sem mudar a versão do protocolo): relógio do servidor, alertas de 24 h / 1 h / 10 min / 1 min. HUD mostra o tempo restante; a lista de servidores mostra a temporada. Entrada recusada com código 4007 durante o fechamento.
+- Testes: `shared/season.test.ts` (6) e `apps/server/src/seasoncheck.ts` (27 checagens, relógio acelerado, arquivos e PostgreSQL). Passo novo no workflow.
+- Ainda não rodado: servidor Colyseus real com salas fechando (código novo da `WorldRoom`), `seasoncheck` contra PostgreSQL real e o cliente (ver PROGRESSO.md).
+
 ## Etapa 13 - Servidores e lista
 - Mundos independentes: cada mundo é uma sala própria (jogadores, criaturas, bases e personagens salvos separados). Cadastro por `WORLDS="id:Nome:regiao;..."` (padrão: `mundo-1`). O `mundo-1` mantém os ids de gravação antigos.
 - Limite de 50 jogadores por mundo, imposto no servidor (`MAX_PLAYERS` agora vai de 1 a 50). Mundo lotado recusa a entrada ("servidor lotado") e nunca abre uma segunda sala do mesmo mundo; a vaga de quem está reconectando continua reservada.

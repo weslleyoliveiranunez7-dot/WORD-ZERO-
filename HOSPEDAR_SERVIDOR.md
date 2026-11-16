@@ -70,3 +70,12 @@ Com `DATABASE_URL` o servidor cria e atualiza as tabelas sozinho (migrações), 
 - `ENDERECO/servers` mostra a lista (nome, região, jogadores/limite, status). `ENDERECO/health` mostra `worlds` e `maxPlayers`.
 - Todos os mundos rodam no MESMO processo (no plano gratuito do Render, CPU e memória são pequenas): comece com 1 ou 2 mundos. Quantos jogadores o servidor aguenta de verdade só será medido na Etapa 17.
 - Todos os mundos usam o mesmo mapa por enquanto (um mapa diferente por mundo entra com as temporadas, Etapa 14).
+
+## Temporada de 7 dias e wipe (Etapa 14)
+- Cada mundo vive em temporadas de 7 dias (relógio do SERVIDOR, em UTC). Ao completar 7 dias: `CLOSING` (aviso final de 30 s, sem ações) -> a sala fecha -> `ARCHIVED` (grava o resultado) -> `RESETTING` (apaga personagens, bases, baús e snapshots daquela temporada) -> nova temporada `ACTIVE` com **seed nova** (mapa novo).
+- O wipe roda no processo do servidor: **não precisa de jogador conectado**, mas o servidor precisa estar LIGADO (no Render gratuito ele dorme; se estiver dormindo no fim da temporada, o wipe acontece assim que ele acordar).
+- O estado fica no registro `meta_season_<mundo>` (mesmo banco dos personagens). Se o servidor cair no meio do wipe, ao religar ele continua de onde parou, sem criar temporada duplicada.
+- Dados de conta/histórico (`meta_*`, auditoria e resultados `meta_season_<mundo>_result_<n>`) **não** são apagados.
+- Precisa de `DATABASE_URL` (PostgreSQL) ou arquivos para apagar de verdade. Com Supabase por REST o wipe não apaga os registros antigos (eles só ficam inalcançáveis, pois os ids mudam por temporada).
+- Só teste: `SEASON_LENGTH_SECONDS` (mín. 5) e `SEASON_GRACE_SECONDS` encurtam a temporada. Não use em produção.
+- **Atenção (mudança na Etapa 14):** os ids dos personagens/bases agora incluem mundo e temporada. Personagens e bases salvos nas etapas 7 a 13 deixam de ser lidos: a temporada 1 começa limpa.
