@@ -17,6 +17,7 @@ import {
   PlayerSim,
   applySave,
   bestWeapon,
+  weaponSlot,
   killCredit,
   performAttack,
   makeSave,
@@ -31,6 +32,7 @@ import {
   inspectCraft,
   inspectInput,
   inspectInteract,
+  inspectInventoryMove,
   inspectRespawn,
   inspectTorch,
   inspectUseItem,
@@ -170,6 +172,16 @@ export class WorldRoom extends Room {
       this.finish(client, p, "REQUEST_USE_ITEM", p.life.useItem(r.msg.slot, r.msg.actionId, Date.now(), r.msg.part));
     });
 
+    // EXTRA 6.3: organizar o inventario (mover, dividir, descartar, equipar, desequipar). A mensagem so traz a operacao e os
+    // slots/quantidade; o servidor valida (inspectInventoryMove) e aplica tudo ou nada em PlayerLife.inventoryOp.
+    this.onMessage("REQUEST_INVENTORY_MOVE", (client, raw) => {
+      const p = this.admit(client);
+      if (!p) return;
+      const r = inspectInventoryMove(raw, p.life.inventory.size);
+      if (!r.msg) return this.violation(client, p, r.reason, r.weight);
+      this.finish(client, p, "REQUEST_INVENTORY_MOVE", p.life.inventoryOp(r.msg, Date.now()));
+    });
+
     // Etapa 7: coletar recurso / pegar mochila. O alvo e a posicao saem do SERVIDOR, nunca da mensagem.
     this.onMessage("REQUEST_INTERACT", (client, raw) => {
       const p = this.admit(client);
@@ -197,6 +209,8 @@ export class WorldRoom extends Room {
         const d = t ? this.structures.damage(t.tx, t.ty, dmg) : null;
         if (d && d.hit) {
           events = [{ kind: "hit", attacker: client.sessionId, x: d.x, y: d.y, damage: dmg }];
+          const ws = weaponSlot(p.life.inventory); // EXTRA 6.3: bater em estrutura tambem desgasta a arma
+          if (ws >= 0) p.life.wear(ws, 1);
           if (d.drops.length > 0) this.loot.addDrop(d.x, d.y, d.drops, now); // conteudo do bau destruido vira mochila no chao
         }
       }
@@ -684,8 +698,11 @@ export class WorldRoom extends Room {
     if (force || p.life.invVersion !== p.lastInvVersion || now - p.lastInvSent >= INVENTORY_HEARTBEAT_MS) {
       p.lastInvVersion = p.life.invVersion;
       p.lastInvSent = now;
-      const inv: InventoryUpdateMsg = { slots: p.life.inventory.snapshot() };
+      const inv: InventoryUpdateMsg = { slots: p.life.inventory.snapshot(), weight: p.life.inventory.totalWeight(), maxWeight: p.life.inventory.maxWeight };
       client.send("INVENTORY_UPDATE", inv);
+    }
+    if (p.life.notices.length > 0) {
+      for (const text of p.life.notices.splice(0)) client.send("SERVER_NOTICE", { text } satisfies ServerNoticeMsg); // EXTRA 6.3: "Porrete quebrou!"
     }
     if (p.lastStructVersion !== this.structures.version) {
       p.lastStructVersion = this.structures.version;
