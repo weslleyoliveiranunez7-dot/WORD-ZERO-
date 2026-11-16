@@ -2,6 +2,8 @@ import { Client, Room } from "colyseus.js";
 import { setLastWorld } from "./serverUrl";
 import {
   JOIN_ERROR_FULL,
+  JOIN_ERROR_SEASON_CLOSED,
+  type SeasonUpdateMsg,
   JOIN_ERROR_UNKNOWN_WORLD,
   KICK_CODE,
   PROTOCOL_VERSION,
@@ -43,6 +45,7 @@ export interface WorldChoice {
   id: string;
   name: string;
   roomId?: string;
+  seed?: number; // Etapa 14: seed da temporada (vem da lista); o cliente gera o mesmo mapa do servidor
 }
 
 // Traduz a recusa do servidor em texto curto. O codigo pode vir no `code` ou so na mensagem, entao olha os dois.
@@ -51,6 +54,7 @@ export function describeJoinError(e: unknown): { text: string; full: boolean } {
   const msg = e instanceof Error ? e.message : String(e);
   if (code === JOIN_ERROR_FULL || /lotado/i.test(msg)) return { text: "servidor lotado", full: true };
   if (code === JOIN_ERROR_UNKNOWN_WORLD || /mundo desconhecido|outro mundo/i.test(msg)) return { text: "mundo desconhecido", full: false };
+  if (code === JOIN_ERROR_SEASON_CLOSED || /temporada/i.test(msg)) return { text: "temporada encerrando: tente em instantes", full: false };
   if (code === 4002) return { text: "personagem ja conectado em outra aba/aparelho", full: false };
   return { text: msg, full: false };
 }
@@ -69,6 +73,8 @@ export class NetClient {
   onStructures: (m: StructureUpdateMsg) => void = () => {};
   onChest: (m: ChestUpdateMsg) => void = () => {};
   onNotice: (m: ServerNoticeMsg) => void = () => {};
+  onSeason: (m: SeasonUpdateMsg) => void = () => {};
+  seasonClosed = false; // o servidor avisou que a temporada acabou: a desconexao seguinte e definitiva (nao reconecta)
   private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
   private client: Client;
   private room?: Room;
@@ -123,10 +129,19 @@ export class NetClient {
     room.onMessage("COMBAT_EVENT", (m: CombatEventMsg) => this.onCombat(m)); // so feedback visual: o estado real vem do servidor
     room.onMessage("STRUCTURE_UPDATE", (m: StructureUpdateMsg) => this.onStructures(m));
     room.onMessage("SERVER_NOTICE", (m: ServerNoticeMsg) => this.onNotice(m));
+    room.onMessage("SEASON_UPDATE", (m: SeasonUpdateMsg) => {
+      if (m.status !== "ACTIVE") this.seasonClosed = true;
+      this.onSeason(m);
+    });
     room.onMessage("CHEST_UPDATE", (m: ChestUpdateMsg) => this.onChest(m));
     room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
     room.onLeave((code) => {
       if (this.closed) return;
+      if (this.seasonClosed) {
+        this.status = "desconectado";
+        this.lastError = "temporada encerrada";
+        return;
+      }
       if (code === KICK_CODE) {
         this.status = "desconectado";
         this.lastError = "expulso pelo servidor";
