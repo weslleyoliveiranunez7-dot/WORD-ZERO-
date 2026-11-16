@@ -13,6 +13,7 @@ import {
   type ChestUpdateMsg,
   type CombatEventMsg,
   type EntityUpdateMsg,
+  type InventoryIntent,
   type InventoryUpdateMsg,
   type JoinOptions,
   type PlayerInputMsg,
@@ -74,6 +75,7 @@ export class NetClient {
   onStructures: (m: StructureUpdateMsg) => void = () => {};
   onChest: (m: ChestUpdateMsg) => void = () => {};
   onNotice: (m: ServerNoticeMsg) => void = () => {};
+  onRejected: (reason: string) => void = () => {}; // EXTRA 6.3: motivo da recusa (a tela so mostra os que ajudam o jogador)
   onSeason: (m: SeasonUpdateMsg) => void = () => {};
   seasonClosed = false; // o servidor avisou que a temporada acabou: a desconexao seguinte e definitiva (nao reconecta)
   private actionId = 0; // cresce sempre: o servidor ignora ids repetidos
@@ -135,7 +137,7 @@ export class NetClient {
       this.onSeason(m);
     });
     room.onMessage("CHEST_UPDATE", (m: ChestUpdateMsg) => this.onChest(m));
-    room.onMessage("ACTION_REJECTED", () => undefined); // o servidor ja corrige o estado; nada a fazer aqui
+    room.onMessage("ACTION_REJECTED", (m: { reason?: unknown }) => typeof m?.reason === "string" && this.onRejected(m.reason)); // o servidor ja corrige o estado
     room.onLeave((code) => {
       if (this.closed) return;
       if (this.seasonClosed) {
@@ -181,6 +183,11 @@ export class NetClient {
   // Intencoes: o servidor decide se vale (vivo? item existe? cooldown?) e responde com o estado novo.
   useItem(slot: number, part?: BodyPart): void {
     if (this.status === "online") this.room?.send("REQUEST_USE_ITEM", { slot, actionId: ++this.actionId, ...(part ? { part } : {}) });
+  }
+
+  // EXTRA 6.3: organizar o inventario (mover/dividir/descartar/equipar). So a intencao; o servidor confere e responde com o inventario novo.
+  inventoryOp(op: InventoryIntent): void {
+    if (this.status === "online") this.room?.send("REQUEST_INVENTORY_MOVE", { ...op, actionId: ++this.actionId });
   }
 
   interact(): void {
