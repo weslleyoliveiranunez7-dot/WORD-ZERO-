@@ -1,5 +1,16 @@
 # Changelog
 
+## Etapa 16 - Menu inicial, APK e GitHub Pages (2026-11-15)
+- **Tela inicial** (`ui/MainMenu.ts`, `TitleScreen`): só a logo e "TOQUE PARA COMEÇAR" (toque, Enter ou Espaço); mostra "Servidor: online / sem resposta". Substitui a tela antiga da `BootScene`.
+- **Menu de servidores** no estilo da referência (grafite escuro, vermelho da logo, aba JOGAR, lateral com categorias, lista em linhas com jogadores / temporada / status): `MenuScreen`. Mesma lógica da Etapa 13 (lista de `/servers`, atualiza a cada 5 s, lotado desabilitado, último servidor marcado, aviso de lotado/fim de temporada). Lateral: SERVIDORES, ÚLTIMO (CONTINUAR) e OFFLINE (mapa de teste, que antes era um botão da tela inicial). Se a lista falhar, aparece ENTRAR NO SERVIDOR PADRÃO. `ServerListScene` e `BootScene` viraram cascas finas.
+- **Imagens**: `apps/web/public/logo.png` (transparente), `logo-icon.png`, `icons/*` (PWA, maskable, apple-touch, favicon) e `manifest.webmanifest` com ícones.
+- **Capacitor / APK** (`mobile/`): `capacitor.config.json` (appId `com.worldzero.game`, esquema https) e `package.json` próprio, **fora do workspace pnpm** (não mexe no lockfile; o Render usa `--frozen-lockfile`). Imagens de ícone/abertura em `mobile/assets/`.
+- **Workflows novos** (só manuais): `pages.yml` (publica o cliente no Pages) e `apk.yml` (cria o projeto Android, gira na horizontal, gera ícone/abertura, compila APK **debug** e guarda como arquivo do workflow; não cria release).
+- Doc: `docs/DEPLOY_APK_PAGES.md` (Pages hospeda o cliente, não o servidor; passo a passo; limites).
+- Verificado aqui: typecheck dos arquivos novos; as duas telas renderizadas no Chromium com lista simulada (tocar, entrar, continuar, offline, voltar, falha da lista); YAML/JSON dos workflows e configs válidos.
+- NÃO verificado: build com Vite/Phaser no jogo todo, `pnpm install`, os dois workflows no GitHub (Pages, Capacitor, Gradle, `capacitor-assets`), instalação do APK e conexão no celular. O primeiro Run workflow é o teste.
+- Arquivos: novos `apps/web/src/ui/MainMenu.ts`, `apps/web/public/{logo,logo-icon}.png`, `apps/web/public/icons/*`, `mobile/*`, `.github/workflows/{pages,apk}.yml`, `docs/DEPLOY_APK_PAGES.md`; alterados `apps/web/src/game/{BootScene,ServerListScene}.ts`, `apps/web/index.html`, `apps/web/public/manifest.webmanifest`, `README.md`, `CHANGELOG.md`, `PROGRESSO.md`.
+
 ## Polimento - HUD e Central de Serviços (2026-11-15)
 - Só interface (nada de regra de jogo, servidor ou protocolo mudou). Visual de sobrevivência: fundo escuro, cinza/preto, verde discreto, bordas finas, DOM + CSS simples (sem biblioteca nova).
 - Canto superior direito: relógio digital (hora do mundo) + minimapa compacto alinhado (o minimapa só redesenha se o ponto andou ou um chunk carregou).

@@ -412,3 +412,6 @@ Apagados: nenhum.
 
 ## Polimento - HUD e Central de Serviços (2026-11-15)
 Ver `CHANGELOG.md`. Só interface. Teste no navegador pendente: abrir cada painel (P/I/C/B/G), fabricar, construir, coletar e conferir no celular deitado e em pé.
+
+## Etapa 16 - Menu inicial, APK e Pages (escrita, 2026-11-15)
+Ver `CHANGELOG.md` e `docs/DEPLOY_APK_PAGES.md`. Critério de aceite: "APK instala e conecta a um backend de teste; Pages abre o cliente web." Só marcar como concluída depois de rodar os workflows `Pages (cliente web)` e `APK debug (Android)`, instalar o APK e entrar num servidor.

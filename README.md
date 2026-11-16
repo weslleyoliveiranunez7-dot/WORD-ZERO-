@@ -27,8 +27,8 @@ packages/shared constantes e nomes de mensagens
 docs/           Documento Mestre e decisões técnicas
 ```
 
-## GitHub Pages
-Hospeda só o cliente web estático. O servidor multiplayer NÃO roda no Pages.
+## GitHub Pages e APK (Etapa 16)
+Pages hospeda só o cliente web estático. O servidor multiplayer NÃO roda no Pages (fica no Render). O APK debug é gerado pelo workflow "APK debug (Android)". Passo a passo: `docs/DEPLOY_APK_PAGES.md`.
 
 ## Verificação automática (GitHub Actions)
 O workflow `.github/workflows/verificar.yml` roda a cada push (e manualmente em Actions > Verificar > Run workflow): instala, checa tipos, roda testes, faz o build do cliente e liga o servidor para consultar `/health`.
