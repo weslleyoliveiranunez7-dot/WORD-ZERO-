@@ -409,3 +409,6 @@ Novos: `apps/server/src/{recovery,backup,persistcheck,restart}.ts`, `apps/server
 Alterados: `apps/server/src/{store,index}.ts`, `apps/server/src/rooms/WorldRoom.ts`, `apps/server/package.json`, `.gitignore`, `.env.example`, `render.yaml`, `HOSPEDAR_SERVIDOR.md`, `PROGRESSO.md`, `CHANGELOG.md`, `docs/DECISOES_TECNICAS.md`
 Fora do zip (editar à mão): `.github/workflows/verificar.yml` (serviço `postgres` + 3 passos novos).
 Apagados: nenhum.
+
+## Polimento - HUD e Central de Serviços (2026-11-15)
+Ver `CHANGELOG.md`. Só interface. Teste no navegador pendente: abrir cada painel (P/I/C/B/G), fabricar, construir, coletar e conferir no celular deitado e em pé.

@@ -1,5 +1,16 @@
 # Changelog
 
+## Polimento - HUD e Central de Serviços (2026-11-15)
+- Só interface (nada de regra de jogo, servidor ou protocolo mudou). Visual de sobrevivência: fundo escuro, cinza/preto, verde discreto, bordas finas, DOM + CSS simples (sem biblioteca nova).
+- Canto superior direito: relógio digital (hora do mundo) + minimapa compacto alinhado (o minimapa só redesenha se o ponto andou ou um chunk carregou).
+- Lateral esquerda: **Central de Serviços** (`ui/Services.ts`), 5 ícones: Personagem (P), Inventário (I), Fabricação (C), Construção (B), Coleta (G). Um painel por vez; nome e explicação ao passar o mouse ou manter pressionado no celular; Esc fecha. Travada na tela de morte.
+- Personagem: corpo (silhueta colorida pela vida) + Vida/Fome/Sede/Energia juntos, cada um com ícone, barra, valor, estado e explicação. As barras saíram do HUD principal.
+- Inventário: busca, categorias, grade de 12 slots, detalhes do item (peso, efeito, arma) e USAR. Fabricação: 3 áreas (receitas / materiais com ✔✘ verde/vermelho / resultado + FABRICAR com motivo quando bloqueado). Construção: categorias, materiais, descrição, resultado, CONSTRUIR + REPARAR / ACESSO. Coleta (`ui/CollectUi.ts`): recurso por perto, ferramenta e rendimento.
+- Barra de atalhos inferior: 6 primeiros slots (teclas 1-6), a arma em uso fica destacada. Controles de movimento e botões ATACAR / COLETAR / TOCHA / PORTA mantidos como estavam.
+- Não existe dano por parte do corpo no jogo: a silhueta só reflete a vida geral.
+- Não rodado: o jogo completo no navegador (Phaser/Colyseus não instalados aqui). Verificado: typecheck das telas novas e render real das telas no Chromium com dados simulados (cliques geram as mesmas ações de antes).
+- Arquivos: novos `apps/web/src/ui/{theme,Services,CollectUi}.ts`; alterados `apps/web/src/ui/{Hud,Minimap,SurvivalUi,BuildUi,landscape}.ts`, `apps/web/src/game/GameScene.ts`.
+
 ## Etapa 14 - Temporada de 7 dias e wipe
 - Relógio da temporada no BACKEND (`apps/server/src/seasons.ts`, `SeasonManager`): estados `ACTIVE -> CLOSING -> ARCHIVED -> RESETTING -> ACTIVE`, cada passo gravado antes de agir (`meta_season_<mundo>`), idempotente e retomável após queda. Roda sem jogador conectado.
 - Ao fim dos 7 dias: sala selada (nenhuma ação, nada é gravado), aviso final de 30 s, sala fechada, resultado arquivado, wipe (personagens, bases, baús, snapshots da temporada) verificado (2ª limpeza = 0) e nova temporada com seed nova. Falha no wipe = mundo fechado e nova tentativa; nunca cria temporada duplicada. Registro de temporada inválido = mundo fechado, nada inventado por cima.
