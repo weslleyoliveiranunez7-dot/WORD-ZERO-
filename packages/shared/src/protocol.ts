@@ -2,6 +2,7 @@ import type { PieceKind } from "./building";
 import type { RecipeId } from "./crafting";
 import type { ItemStack, Slot } from "./inventory";
 import type { ItemId } from "./items";
+import { WORLD_ID_PATTERN } from "./servers";
 
 // Nomes das mensagens (Documento Mestre, Parte 8.1) + formato das mensagens usadas desde a Etapa 4.
 // Sem Colyseus Schema por enquanto: mensagens JSON simples, validadas no servidor (parseInput).
@@ -43,6 +44,7 @@ export const RECONNECT_WINDOW_SECONDS = 15; // servidor guarda o jogador por 15 
 export interface JoinOptions {
   protocol: number;
   key?: string; // Etapa 7: chave secreta do personagem (gerada no aparelho); sem ela nada e salvo
+  world?: string; // Etapa 13: id do mundo (servidor) escolhido na lista; ausente = mundo padrao
 }
 
 export const PLAYER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -89,10 +91,18 @@ export function parseInput(raw: unknown): PlayerInputMsg | null {
 
 export function parseJoinOptions(raw: unknown): JoinOptions | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { protocol, key } = raw as Record<string, unknown>;
+  const { protocol, key, world } = raw as Record<string, unknown>;
   if (typeof protocol !== "number") return null;
-  if (key === undefined) return { protocol };
-  return typeof key === "string" && PLAYER_KEY_PATTERN.test(key) ? { protocol, key } : null;
+  const out: JoinOptions = { protocol };
+  if (key !== undefined) {
+    if (typeof key !== "string" || !PLAYER_KEY_PATTERN.test(key)) return null;
+    out.key = key;
+  }
+  if (world !== undefined) {
+    if (typeof world !== "string" || !WORLD_ID_PATTERN.test(world)) return null;
+    out.world = world;
+  }
+  return out;
 }
 
 // Resposta do servidor quando recusa uma mensagem/acao (enviada no maximo 1x por segundo por jogador).
