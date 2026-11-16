@@ -55,6 +55,14 @@ import { DayNight } from "./daylight";
 const VISIBLE_TILES_SHORT_SIDE = 10; // quantos tiles cabem no lado menor da tela
 
 // Etapa 3: mundo em chunks (gerados por seed), carrega os proximos e descarrega os distantes.
+// EXTRA 6.3: texto das recusas do servidor que fazem sentido mostrar (o resto continua silencioso).
+const REJECT_TEXT: Record<string, string> = {
+  inventario_cheio: "Mochila cheia ou peso maximo atingido.",
+  sem_slot_livre: "Sem slot livre para dividir a pilha.",
+  nao_divisivel: "Este item nao pode ser dividido assim.",
+  nao_equipavel: "Este item nao pode ser equipado.",
+};
+
 export class GameScene extends Phaser.Scene {
   private world!: ChunkedWorld;
   private chunkImgs = new Map<number, Phaser.GameObjects.Image>();
@@ -196,6 +204,7 @@ export class GameScene extends Phaser.Scene {
       this.collectUi = new CollectUi(this.services);
       this.collectUi.onCollect = () => this.net?.interact();
       this.survivalUi.onUse = (slot, part) => this.net?.useItem(slot, part);
+      this.survivalUi.onInvOp = (op) => this.net?.inventoryOp(op);
       this.survivalUi.onRespawn = () => this.net?.respawn();
       this.survivalUi.onCraft = (recipe) => this.net?.craft(recipe);
       this.net.onPlayerState = (st) => {
@@ -254,6 +263,10 @@ export class GameScene extends Phaser.Scene {
       };
       this.buildUi.onTrust = () => this.net?.trust();
       this.net.onNotice = (m) => this.buildUi?.showNotice(m.text);
+      this.net.onRejected = (reason) => {
+        const text = REJECT_TEXT[reason]; // EXTRA 6.3: so recusas do inventario que o jogador precisa entender
+        if (text) this.buildUi?.showNotice(text);
+      };
       this.buildUi.onMove = (op, slot) => {
         if (this.chestAt) this.net?.moveChest(op, this.chestAt.tx, this.chestAt.ty, slot);
       };
