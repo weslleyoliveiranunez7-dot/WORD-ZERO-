@@ -1,5 +1,8 @@
 import { Client, Room } from "colyseus.js";
+import { setLastWorld } from "./serverUrl";
 import {
+  JOIN_ERROR_FULL,
+  JOIN_ERROR_UNKNOWN_WORLD,
   KICK_CODE,
   PROTOCOL_VERSION,
   RECONNECT_WINDOW_SECONDS,
@@ -35,11 +38,29 @@ function playerKey(): string {
 
 export type NetStatus = "conectando" | "online" | "reconectando" | "desconectado";
 
+// Mundo escolhido na lista (Etapa 13). roomId = sala ativa naquele momento; sem ele o servidor abre a sala do mundo.
+export interface WorldChoice {
+  id: string;
+  name: string;
+  roomId?: string;
+}
+
+// Traduz a recusa do servidor em texto curto. O codigo pode vir no `code` ou so na mensagem, entao olha os dois.
+export function describeJoinError(e: unknown): { text: string; full: boolean } {
+  const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
+  const msg = e instanceof Error ? e.message : String(e);
+  if (code === JOIN_ERROR_FULL || /lotado/i.test(msg)) return { text: "servidor lotado", full: true };
+  if (code === JOIN_ERROR_UNKNOWN_WORLD || /mundo desconhecido|outro mundo/i.test(msg)) return { text: "mundo desconhecido", full: false };
+  if (code === 4002) return { text: "personagem ja conectado em outra aba/aparelho", full: false };
+  return { text: msg, full: false };
+}
+
 // Conexao com a sala do servidor. Reconecta sozinho (ate RECONNECT_WINDOW_SECONDS) se a rede cair.
 export class NetClient {
   status: NetStatus = "conectando";
   sessionId = "";
   lastError = "";
+  lastErrorFull = false; // a ultima recusa foi "servidor lotado"
   onSnapshot: (s: WorldSnapshot) => void = () => {};
   onPlayerState: (s: PlayerStateMsg) => void = () => {};
   onEntities: (m: EntityUpdateMsg) => void = () => {};
@@ -54,20 +75,40 @@ export class NetClient {
   private token = "";
   private closed = false;
 
-  constructor(url: string) {
+  constructor(url: string, private world?: WorldChoice) {
     this.client = new Client(url.replace(/^http/, "ws"));
   }
 
   async connect(): Promise<void> {
     try {
       const key = playerKey();
-      const opts: JoinOptions = key ? { protocol: PROTOCOL_VERSION, key } : { protocol: PROTOCOL_VERSION };
-      this.attach(await this.client.joinOrCreate(WORLD_ROOM_NAME, opts));
+      const opts: JoinOptions = { protocol: PROTOCOL_VERSION };
+      if (key) opts.key = key;
+      if (this.world) opts.world = this.world.id;
+      let room: Room;
+      try {
+        room = await this.join(opts);
+      } catch (e) {
+        // sala trocou entre a lista e o toque (fechou e reabriu): tenta UMA vez pelo mundo, sem a sala antiga
+        if (!this.world?.roomId || describeJoinError(e).full) throw e;
+        this.world = { id: this.world.id, name: this.world.name };
+        room = await this.join(opts);
+      }
+      this.attach(room);
+      if (this.world) setLastWorld(this.world.id);
     } catch (e) {
+      const d = describeJoinError(e);
       this.status = "desconectado";
-      this.lastError = e instanceof Error ? e.message : String(e);
+      this.lastError = d.text;
+      this.lastErrorFull = d.full;
       throw e;
     }
+  }
+
+  // Com sala conhecida entra direto nela (joinById); senao pede o mundo ao servidor (joinOrCreate filtrado por mundo).
+  private join(opts: JoinOptions): Promise<Room> {
+    if (this.world?.roomId) return this.client.joinById(this.world.roomId, opts);
+    return this.client.joinOrCreate(WORLD_ROOM_NAME, opts);
   }
 
   private attach(room: Room): void {
