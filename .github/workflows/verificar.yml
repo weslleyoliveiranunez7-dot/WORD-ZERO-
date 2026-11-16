@@ -9,6 +9,7 @@ permissions:
 jobs:
   verificar:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Etapa 12: um PostgreSQL de verdade so para os testes de persistencia (sai junto com o job).
     services:
       postgres:
@@ -137,6 +138,7 @@ jobs:
 
       - name: "Teste de servidores (2 mundos, lista, lotado, mundos independentes, reconexao)"
         id: servidores
+        timeout-minutes: 3
         run: |
           set -o pipefail
           cd apps/server
