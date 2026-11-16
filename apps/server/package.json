@@ -12,7 +12,8 @@
     "duel": "tsx src/duel.ts",
     "backup": "tsx src/backup.ts",
     "persistcheck": "tsx src/persistcheck.ts",
-    "restart": "tsx src/restart.ts"
+    "restart": "tsx src/restart.ts",
+    "worldcheck": "tsx src/worldcheck.ts"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.15.0",
