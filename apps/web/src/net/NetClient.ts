@@ -2,6 +2,7 @@ import { Client, Room } from "colyseus.js";
 import { setLastWorld } from "./serverUrl";
 import {
   JOIN_ERROR_FULL,
+  type BodyPart,
   JOIN_ERROR_SEASON_CLOSED,
   type SeasonUpdateMsg,
   JOIN_ERROR_UNKNOWN_WORLD,
@@ -178,8 +179,8 @@ export class NetClient {
   }
 
   // Intencoes: o servidor decide se vale (vivo? item existe? cooldown?) e responde com o estado novo.
-  useItem(slot: number): void {
-    if (this.status === "online") this.room?.send("REQUEST_USE_ITEM", { slot, actionId: ++this.actionId });
+  useItem(slot: number, part?: BodyPart): void {
+    if (this.status === "online") this.room?.send("REQUEST_USE_ITEM", { slot, actionId: ++this.actionId, ...(part ? { part } : {}) });
   }
 
   interact(): void {
