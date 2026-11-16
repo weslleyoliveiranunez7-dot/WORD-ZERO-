@@ -1,0 +1,14 @@
+{
+  "name": "worldzero-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Empacotamento Android (Capacitor). Fica FORA do workspace pnpm de proposito: so o workflow 'APK debug' instala isto.",
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}
