@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { BootScene } from "./game/BootScene";
 import { GameScene } from "./game/GameScene";
+import { ServerListScene } from "./game/ServerListScene";
 import { setupLandscape } from "./ui/landscape";
 
 let game: Phaser.Game | undefined;
@@ -22,5 +23,5 @@ game = new Phaser.Game({
     height: "100%",
   },
   render: { antialias: false, pixelArt: true, powerPreference: "high-performance" },
-  scene: [BootScene, GameScene],
+  scene: [BootScene, ServerListScene, GameScene],
 });
