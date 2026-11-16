@@ -80,6 +80,13 @@
 - **Banco fora do ar**: quem tenta entrar é recusado (4004) em vez de entrar "zerado"; quem já está jogando continua e regrava quando o banco volta. Não há fila de gravações pendentes em disco (decisão em aberto).
 - **SSL**: banco remoto usa SSL sem verificar o certificado por padrão (os planos gratuitos usam certificados que o Node não confia sozinho); `DATABASE_SSL=verify` exige certificado válido.
 
+## Etapa 14 - Temporada e wipe (2026-11-15)
+- **Ids por temporada** em vez de "apagar e reutilizar": o wipe apaga por prefixo `<mundo>_s<n>_` (termina em `_`, e ids de mundo não têm `_`: uma temporada/mundo nunca alcança outro). Custo: dados das etapas 7-13 ficam órfãos (aceito: ainda é fase de testes).
+- **Um registro por mundo** (`meta_season_<mundo>`) com `n` crescente; a temporada nova só passa a existir depois do wipe verificado. É isso que impede duplicar temporada.
+- Wipe só com a sala FECHADA (a sala grava jogadores ao fechar); sala selada não grava nada.
+- Valores provisórios: aviso final 30 s; alertas 24 h/1 h/10 min/1 min; próxima temporada começa na hora do reset (não encadeada no fim anterior, para um servidor que ficou desligado não abrir temporada já vencida).
+- Em aberto: estatísticas da temporada (só o resultado com datas/seed é arquivado; ranking e contagem de mortes/jogadores não existem); conta/login (ainda não há contas: nada a preservar além de `meta_*`); mais de um processo de servidor ao mesmo tempo (não há trava entre processos); alerta por push/e-mail não existe.
+
 ## Etapa 13 - Servidores e lista
 - **Mundo = sala, uma por mundo**: o cadastro (`WorldRegistry`) só deixa existir UMA sala viva por mundo. Se o Colyseus tentar abrir outra (a primeira está cheia e trancada), a criação é recusada com "servidor lotado". Isso garante "mesmo mundo" e o limite de 50 sem depender só do `maxClients`.
 - **Entrada por sala ou por mundo**: a lista devolve a sala ativa (`roomId`) e o cliente entra direto nela (`joinById`); sem sala ainda, pede o mundo (`joinOrCreate` com `filterBy(["world"])`). Se a sala trocou entre a lista e o toque, o cliente tenta uma vez pelo mundo. Quem não informa mundo (testes antigos) entra em qualquer sala.
