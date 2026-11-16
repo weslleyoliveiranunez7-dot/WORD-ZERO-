@@ -16,7 +16,6 @@ import { join as pathJoin } from "node:path";
 import { Client, Room } from "colyseus.js";
 import { PROTOCOL_VERSION, WORLD_ROOM_NAME, parseServerList, type InventoryUpdateMsg, type WorldInfo, type WorldSnapshot } from "@worldzero/shared";
 import { characterId } from "./worlds";
-import { keyToId } from "./store";
 
 const PORT = Number(process.env.WORLDS_PORT ?? 2572);
 const CAP = 3;
@@ -185,7 +184,7 @@ async function main(): Promise<void> {
     for (const s of open.splice(0)) await safeLeave(s.room);
     await sleep(1500);
     const key = randomBytes(24).toString("base64url");
-    check("mundo-1 usa o id de gravacao antigo; mundo-2 usa outro", characterId(key, "mundo-1") === keyToId(key) && characterId(key, "mundo-2") !== keyToId(key), "ids");
+    check("id de gravacao muda por mundo e por temporada", characterId(key, "mundo-1", 1) !== characterId(key, "mundo-2", 1) && characterId(key, "mundo-1", 1) !== characterId(key, "mundo-1", 2), "ids");
     let s1 = await enter("mundo-1", key);
     check("personagem novo no mundo-1 recebe o kit (2 aguas)", s1.count("water_bottle") === 2, `agua ${s1.count("water_bottle")}`);
     s1.room.send("REQUEST_USE_ITEM", { slot: s1.slotOf("water_bottle"), actionId: 1 });

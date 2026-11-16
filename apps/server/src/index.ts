@@ -6,6 +6,7 @@ import { PROTOCOL_VERSION, WORLD_ROOM_NAME, worldCapacity, type ServerListRespon
 import { loadConfig } from "./config";
 import { WorldRoom } from "./rooms/WorldRoom";
 import { createStore } from "./store";
+import { SeasonManager, seasonOptionsFromEnv } from "./seasons";
 import { WorldRegistry } from "./worlds";
 
 async function main(): Promise<void> {
@@ -17,6 +18,11 @@ async function main(): Promise<void> {
   const registry = new WorldRegistry(config.worlds, worldCapacity(config.maxPlayers));
   console.log(`[server] mundos: ${config.worlds.map((w) => `${w.id} (${w.name}, ${w.region})`).join(", ")} - ate ${registry.capacity} jogadores cada`);
 
+  // Etapa 14: relogio da temporada no backend (independe de jogador conectado). Le/cria a temporada ANTES de aceitar jogadores.
+  const seasons = new SeasonManager(store, config.worlds.map((w) => w.id), { closeWorld: (id) => void registry.closeRoom(id), roomAlive: (id) => registry.roomOf(id) !== undefined }, seasonOptionsFromEnv());
+  await seasons.init();
+  seasons.start();
+
   const app = express();
   app.get("/health", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
@@ -26,7 +32,11 @@ async function main(): Promise<void> {
   app.get("/servers", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
     res.setHeader("Cache-Control", "no-store");
-    const body: ServerListResponse = { protocol: PROTOCOL_VERSION, servers: registry.list() };
+    const servers = registry.list().map((w) => {
+      const s = seasons.current(w.id);
+      return s ? { ...w, season: { n: s.n, seed: s.seed, status: s.status, endsAt: s.endsAt, now: Date.now() } } : w;
+    });
+    const body: ServerListResponse = { protocol: PROTOCOL_VERSION, servers };
     res.json(body);
   });
 
@@ -37,7 +47,7 @@ async function main(): Promise<void> {
   });
   // filterBy(["world"]): quem pede o mesmo mundo cai na MESMA sala; mundos diferentes, salas diferentes. Quem nao informa mundo (testes antigos) entra em qualquer sala.
   gameServer
-    .define(WORLD_ROOM_NAME, WorldRoom, { maxPlayers: registry.capacity, survivalScale: config.survivalScale, store, registry })
+    .define(WORLD_ROOM_NAME, WorldRoom, { maxPlayers: registry.capacity, survivalScale: config.survivalScale, store, registry, seasons })
     .filterBy(["world"]);
 
   await gameServer.listen(config.port);
@@ -48,6 +58,7 @@ async function main(): Promise<void> {
   const stop = (signal: string): void => {
     if (stopping) return;
     stopping = true;
+    seasons.stop();
     console.log(`[server] ${signal}: salvando e desligando...`);
     const limit = setTimeout(() => {
       console.error("[server] desligamento demorou demais: saindo");

@@ -1,25 +1,31 @@
 import { createHash } from "node:crypto";
-import { DEFAULT_WORLD_ID, worldStatus, type WorldDef, type WorldInfo } from "@worldzero/shared";
-import { keyToId } from "./store";
+import { worldStatus, type WorldDef, type WorldInfo } from "@worldzero/shared";
 
 // Etapa 13: cadastro de mundos. Cada mundo e INDEPENDENTE: sala propria, jogadores, criaturas, bases e personagens salvos separados.
 
-// Id de gravacao do personagem DENTRO de um mundo. O mundo padrao (mundo-1) mantem o id de antes da Etapa 13: ninguem perde o personagem.
-// Nos demais, o id mistura a chave com o mundo (o mesmo aparelho tem um personagem diferente em cada mundo; o hash continua nao revelando a chave).
-export function characterId(key: string, worldId: string): string {
-  if (worldId === DEFAULT_WORLD_ID) return keyToId(key);
-  return createHash("sha256").update(`${key}|${worldId}`).digest("hex");
+// Etapa 14: TODO registro de jogo pertence a uma temporada. O escopo `${mundo}_s${n}_` e o prefixo que o wipe apaga; ele termina em "_" e
+// ids de mundo nao tem "_", entao uma temporada (ou um mundo) nunca alcanca os registros de outra. Registros da temporada em si
+// (`meta_season_*`) nao comecam por nenhum escopo, logo o wipe nunca os toca.
+export function seasonScope(worldId: string, n: number): string {
+  return `${worldId}_s${n}_`;
 }
 
-// Id do registro das bases do mundo (mesmo armazenamento dos personagens; ids de jogador sao hash hex: sem colisao).
-export function structuresId(worldId: string): string {
-  return worldId === DEFAULT_WORLD_ID ? "world-structures" : `world-structures-${worldId}`;
+// Id de gravacao do personagem DENTRO de um mundo e de uma temporada. Mistura a chave com o mundo e a temporada (o hash nao revela a chave).
+// Mudanca da Etapa 14: os ids de antes (sem temporada) deixam de ser lidos; a temporada 1 comeca limpa.
+export function characterId(key: string, worldId: string, n: number): string {
+  return seasonScope(worldId, n) + createHash("sha256").update(`${key}|${worldId}|${n}`).digest("hex");
+}
+
+// Id do registro das bases do mundo naquela temporada.
+export function structuresId(worldId: string, n: number): string {
+  return `${seasonScope(worldId, n)}structures`;
 }
 
 interface Live {
   roomId: string;
   players: number;
   ready: boolean;
+  close?: () => void; // Etapa 14: a sala sabe se desconectar (o wipe fecha a sala antes de apagar)
 }
 
 // Quem sabe, em tempo real, quantos jogadores ha em cada mundo e qual sala esta viva. As salas avisam (WorldRoom.publish);
@@ -44,22 +50,30 @@ export class WorldRegistry {
   }
 
   // Chamado no onCreate da sala (sincrono, antes de qualquer await). false = ja existe outra sala viva deste mundo.
-  claim(id: string, roomId: string): boolean {
+  claim(id: string, roomId: string, close?: () => void): boolean {
     if (!this.defs.has(id)) return false;
     const cur = this.live.get(id);
     // Sala vazia ainda registrada = esta fechando (o Colyseus fecha a sala 1 tick depois do ultimo jogador sair): a nova pode assumir.
     if (cur && cur.roomId !== roomId && cur.players > 0) return false;
-    this.live.set(id, { roomId, players: 0, ready: false });
+    this.live.set(id, { roomId, players: 0, ready: false, close });
     return true;
   }
 
   update(id: string, roomId: string, players: number, ready: boolean): void {
     const cur = this.live.get(id);
-    if (cur && cur.roomId === roomId) this.live.set(id, { roomId, players, ready });
+    if (cur && cur.roomId === roomId) this.live.set(id, { roomId, players, ready, close: cur.close });
   }
 
   release(id: string, roomId: string): void {
     if (this.live.get(id)?.roomId === roomId) this.live.delete(id);
+  }
+
+  // Etapa 14: pede para a sala do mundo se fechar (desconecta todos). false = nao havia sala.
+  closeRoom(id: string): boolean {
+    const l = this.live.get(id);
+    if (!l?.close) return false;
+    l.close();
+    return true;
   }
 
   list(): WorldInfo[] {

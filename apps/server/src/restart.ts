@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
 import { Client, Room } from "colyseus.js";
 import { PROTOCOL_VERSION, WORLD_ROOM_NAME, type InventoryUpdateMsg } from "@worldzero/shared";
-import { createStore, keyToId } from "./store";
+import { createStore } from "./store";
+import { characterId } from "./worlds";
 
 const PORT = Number(process.env.RESTART_PORT ?? 2570);
 const url = `ws://localhost:${PORT}`;
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
   const env: NodeJS.ProcessEnv = useDb ? {} : { DATA_DIR: dir, DATABASE_URL: "" };
   console.log(`armazenamento do teste: ${useDb ? "PostgreSQL (DATABASE_URL)" : `arquivos em ${dir}`}`);
   const key = randomBytes(24).toString("base64url"); // 32 caracteres [A-Za-z0-9_-]
-  const keyId = keyToId(key);
+  const keyId = characterId(key, "mundo-1", 1); // Etapa 14: id do personagem na temporada 1 do mundo padrao
   let server: ChildProcess | undefined;
   try {
     // ---- 1. queda brusca ----

@@ -119,6 +119,30 @@ export class FileStore implements PlayerStore {
     for (const r of file.records) await this.save(r.id, r.data);
     return file.records.length;
   }
+
+  // Etapa 14: wipe. So apaga ids que comecam pelo prefixo (que termina em "_": uma temporada nao alcanca outra). Snapshots saem junto.
+  async purge(prefix: string): Promise<number> {
+    if (!SAFE_ID.test(prefix)) throw new Error("prefixo invalido");
+    let names: string[] = [];
+    try {
+      names = await readdir(this.dir);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    let n = 0;
+    for (const f of names) {
+      if (f.endsWith(".json") && f.startsWith(prefix)) {
+        await rm(join(this.dir, f), { force: true });
+        n++;
+      }
+    }
+    try {
+      for (const d of await readdir(join(this.dir, "snapshots"))) if (d.startsWith(prefix)) await rm(join(this.dir, "snapshots", d), { recursive: true, force: true });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    return n;
+  }
 }
 
 // Tabela esperada: players(id text primary key, data jsonb, updated_at timestamptz). Ver HOSPEDAR_SERVIDOR.md.
