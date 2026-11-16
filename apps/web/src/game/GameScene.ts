@@ -6,12 +6,14 @@ import {
   ChunkedWorld,
   INTERPOLATION_DELAY_MS,
   ITEMS,
+  NODE_REACH_PX,
   PLAYER_SPEED,
   SnapshotBuffer,
   dayPeriod,
   formatClock,
   TILE_ORDER,
   inputToVelocity,
+  nodeAt,
   moveWithCollision,
   type Chunk,
   type CombatEventMsg,
@@ -20,7 +22,7 @@ import {
   type WorldSnapshot,
 } from "@worldzero/shared";
 import { formatRemaining, type SeasonStatus, type SeasonUpdateMsg } from "@worldzero/shared";
-import { Hud } from "../ui/Hud";
+import { Clock, Hud } from "../ui/Hud";
 import { uiRoot } from "../ui/landscape";
 import { Minimap } from "../ui/Minimap";
 import { NetClient, type WorldChoice } from "../net/NetClient";
@@ -28,6 +30,8 @@ import { getServerUrl } from "../net/serverUrl";
 import { VirtualJoystick, isTouchDevice } from "../ui/VirtualJoystick";
 import { SurvivalUi } from "../ui/SurvivalUi";
 import { BuildUi } from "../ui/BuildUi";
+import { CollectUi, type NearbyNode } from "../ui/CollectUi";
+import { Services } from "../ui/Services";
 import {
   CHAR_ME,
   CHAR_OTHER,
@@ -95,7 +99,10 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Image;
   private walkT = 0; // relogio so da animacao de andar
   private dayNight?: DayNight;
-  private clockEl?: HTMLDivElement;
+  private clock?: Clock;
+  private services?: Services;
+  private collectUi?: CollectUi;
+  private depleted = new Set<string>(); // recursos esgotados (aviso do servidor), so para o painel de Coleta
   private torchBtn?: HTMLButtonElement;
   private torchKey?: Phaser.Input.Keyboard.Key;
   private torchOn = true; // jogador quer a tocha acesa
@@ -164,10 +171,7 @@ export class GameScene extends Phaser.Scene {
 
     if (isTouchDevice()) this.joystick = new VirtualJoystick();
     this.hud = new Hud();
-    this.clockEl = document.createElement("div");
-    this.clockEl.dataset.ui = "clock";
-    Object.assign(this.clockEl.style, { position: "fixed", top: "8px", left: "50%", transform: "translateX(-50%)", color: "#fff", font: "bold 14px monospace", background: "rgba(0,0,0,0.5)", padding: "4px 10px", borderRadius: "12px", pointerEvents: "none", zIndex: "20", whiteSpace: "nowrap" });
-    uiRoot().appendChild(this.clockEl);
+    this.clock = new Clock();
     const tb = document.createElement("button");
     tb.textContent = "TOCHA";
     tb.dataset.ui = "torch";
@@ -187,7 +191,10 @@ export class GameScene extends Phaser.Scene {
       this.net = new NetClient(getServerUrl(), data.world);
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
       this.net.onSeason = (m) => this.onSeason(m, data);
-      this.survivalUi = new SurvivalUi();
+      this.services = new Services();
+      this.survivalUi = new SurvivalUi(this.services);
+      this.collectUi = new CollectUi(this.services);
+      this.collectUi.onCollect = () => this.net?.interact();
       this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
       this.survivalUi.onRespawn = () => this.net?.respawn();
       this.survivalUi.onCraft = (recipe) => this.net?.craft(recipe);
@@ -225,6 +232,7 @@ export class GameScene extends Phaser.Scene {
       this.attackBtn = atk;
       this.net.onInventory = (m) => {
         this.survivalUi?.setInventory(m);
+        this.collectUi?.setInventory(m.slots);
         this.hasTorch = m.slots.some((s) => s?.id === "torch");
         this.refreshTorchBtn();
         this.buildUi?.setInventory(m.slots);
@@ -232,7 +240,7 @@ export class GameScene extends Phaser.Scene {
       this.structGfx = this.add.graphics().setDepth(7);
       this.ghostGfx = this.add.graphics().setDepth(8);
       this.roofGfx = this.add.graphics().setDepth(20); // telhado fica POR CIMA do jogador
-      this.buildUi = new BuildUi();
+      this.buildUi = new BuildUi(this.services);
       this.buildUi.onPlace = (piece) => {
         const t = this.frontTile();
         this.net?.build(piece, t.tx, t.ty);
@@ -261,6 +269,7 @@ export class GameScene extends Phaser.Scene {
       });
     }
     this.minimap = new Minimap(this.world);
+    this.clock.setWidth(this.minimap.outerWidth);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off("resize", this.onResize);
@@ -269,12 +278,13 @@ export class GameScene extends Phaser.Scene {
       this.minimap.destroy();
       this.survivalUi?.destroy();
       this.buildUi?.destroy();
+      this.services?.destroy();
       this.world.extraSolid = null;
       this.actionBtn?.remove();
       this.attackBtn?.remove();
       this.dayNight?.destroy();
       this.dayNight = undefined;
-      this.clockEl?.remove();
+      this.clock?.destroy();
       this.torchBtn?.remove();
       this.mobSprites.forEach((m) => m.destroy());
       this.mobSprites.clear();
@@ -424,14 +434,39 @@ export class GameScene extends Phaser.Scene {
       const sea = this.season ? ` | T${this.season.n} ${this.season.status === "ACTIVE" ? formatRemaining(this.season.localEnd - Date.now()) : "ENCERRADA"}` : "";
       this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}${sea}`);
       this.minimap.update(this.pos.x, this.pos.y);
-      if (this.clockEl && this.dayNight) {
+      if (this.clock && this.dayNight) {
         const mins = this.dayNight.gameMinutes;
         const p = dayPeriod(mins);
         const h = mins / 60;
-        const icon = h >= 6 && h < 18 ? "\u2600" : "\u263E"; // sol de dia, lua de noite
-        this.clockEl.textContent = `${icon} ${formatClock(mins)} - ${p === "manha" ? "manh\u00e3" : p}`;
+        this.clock.set(formatClock(mins), p === "manha" ? "manh\u00e3" : p, h >= 6 && h < 18);
+      }
+      this.updateCollectInfo();
+    }
+  }
+
+  // Painel de Coleta: acha o recurso mais perto ao alcance (mesma regra de alcance do servidor; so informacao, quem coleta e o servidor).
+  private updateCollectInfo(): void {
+    if (!this.collectUi) return;
+    const ts = this.world.tileSize;
+    const r = Math.ceil(NODE_REACH_PX / ts) + 1;
+    const ptx = Math.floor(this.pos.x / ts);
+    const pty = Math.floor(this.pos.y / ts);
+    let best: NearbyNode | null = null;
+    let bestD = Infinity;
+    for (let ty = pty - r; ty <= pty + r; ty++) {
+      for (let tx = ptx - r; tx <= ptx + r; tx++) {
+        const def = nodeAt(this.world, tx, ty);
+        if (!def) continue;
+        const d = Math.hypot((tx + 0.5) * ts - this.pos.x, (ty + 0.5) * ts - this.pos.y);
+        if (d > NODE_REACH_PX) continue;
+        const depleted = this.depleted.has(`${tx},${ty}`);
+        // disponivel ganha de esgotado; entre iguais, o mais perto
+        if (best && (best.depleted === depleted ? d >= bestD : !best.depleted)) continue;
+        best = { item: def.item, max: def.max, depleted };
+        bestD = d;
       }
     }
+    this.collectUi.setNearby(this.dead ? null : best);
   }
 
   private sendInput(ix: number, iy: number, delta: number): void {
@@ -497,6 +532,8 @@ export class GameScene extends Phaser.Scene {
     if (!g) return;
     const ts = this.world.tileSize;
     g.clear();
+    this.depleted = new Set(m.depleted);
+    this.updateCollectInfo();
     for (const k of m.depleted) {
       const [tx, ty] = k.split(",").map(Number);
       const type = this.world.tileAt(tx, ty);
