@@ -71,6 +71,18 @@ const EFFECT_LABEL: Record<string, string> = { health: "vida", hunger: "fome", t
 // Descricao curta montada SO com os dados reais do item.
 export function describeItem(def: ItemDef): string {
   const parts = Object.entries(def.effects).map(([k, v]) => `${(v as number) >= 0 ? "+" : ""}${v} ${EFFECT_LABEL[k] ?? k}`);
+  const m = def.medical;
+  if (m) {
+    const t: string[] = [];
+    if (m.bleed === "all") t.push("estanca qualquer sangramento");
+    if (m.bleed === "light") t.push("estanca corte leve e reduz sangramentos maiores");
+    if (m.dress) t.push("cobre a ferida (menos infeccao, cura mais rapida)");
+    if (m.splint) t.push("imobiliza fratura");
+    if (m.painkillerSec) t.push(`reduz a dor por ${Math.round(m.painkillerSec / 60)} min`);
+    if (m.antibiotic) t.push("cura infeccoes");
+    if (m.disinfect) t.push("evita infeccao em ferida limpa");
+    return `${parts.length ? `Ao consumir 1: ${parts.join(", ")}. ` : ""}Trata: ${t.join("; ")}.${m.all ? " Age em TODAS as feridas." : " Age em UMA ferida (a mais urgente ou a parte escolhida)."}`;
+  }
   if (parts.length) return `Ao consumir 1: ${parts.join(", ")}.`;
   if (def.weapon) return `Arma: dano ${def.weapon.damage}, alcance ${def.weapon.reach}, recarga ${(def.weapon.cooldownMs / 1000).toFixed(1)}s. Usada sozinha ao atacar (vale a de maior dano na mochila).`;
   if (def.category === "resource") return "Material. Serve para fabricar e construir.";

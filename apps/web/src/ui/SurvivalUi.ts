@@ -1,4 +1,4 @@
-import { ITEMS, Inventory, RECIPES, RECIPE_IDS, missingFor, type InventoryUpdateMsg, type ItemCategory, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
+import { ITEMS, KIND_NAME, PART_NAME, SEV_NAME, Inventory, RECIPES, RECIPE_IDS, missingFor, type BodyPart, type InjuryView, type InventoryUpdateMsg, type ItemCategory, type PlayerStateMsg, type RecipeId, type Slot } from "@worldzero/shared";
 import { uiRoot } from "./landscape";
 import type { Services } from "./Services";
 import { C, CATEGORY_LABEL, actionButton, chip, describeItem, el, icon, itemName, norm, searchBox, setEnabled } from "./theme";
@@ -18,7 +18,7 @@ const HOTBAR = 6; // os 6 primeiros slots da mochila (teclas 1 a 6); o inventari
 const level = (v: number): string => (v <= 0 ? "CRITICO" : v < 20 ? "Baixo" : v < 60 ? "Atencao" : "Bom");
 
 export class SurvivalUi {
-  onUse: (slot: number) => void = () => {};
+  onUse: (slot: number, part?: BodyPart) => void = () => {}; // `part` = parte do corpo escolhida para tratar (so intencao)
   onRespawn: () => void = () => {};
   onCraft: (recipe: RecipeId) => void = () => {}; // so uma INTENCAO; o servidor confere ingredientes, bancada, espaco e tempo
   private root: HTMLDivElement;
@@ -26,7 +26,14 @@ export class SurvivalUi {
   private fills = new Map<string, HTMLDivElement>();
   private values = new Map<string, HTMLSpanElement>();
   private states = new Map<string, HTMLSpanElement>();
-  private bodyParts: SVGElement[] = [];
+  private partEls: { el: SVGElement; part: BodyPart }[] = [];
+  private selPart: BodyPart | null = null; // parte escolhida para tratar (null = o servidor escolhe a ferida mais urgente)
+  private injList!: HTMLDivElement;
+  private injKey = "";
+  private painLine!: HTMLDivElement;
+  private targetLine!: HTMLDivElement;
+  private statusBar!: HTMLDivElement;
+  private lastInjuries: InjuryView[] = [];
   private bodyLabel!: HTMLDivElement;
   private weaponLine!: HTMLDivElement;
   private warn!: HTMLDivElement;
@@ -89,7 +96,7 @@ export class SurvivalUi {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     const n = Number(e.key);
-    if (Number.isInteger(n) && n >= 1 && n <= this.slots.length && !e.repeat) this.onUse(n - 1);
+    if (Number.isInteger(n) && n >= 1 && n <= this.slots.length && !e.repeat) this.onUse(n - 1, this.selPart ?? undefined);
   }
 
   // ---------- PERSONAGEM ----------
@@ -102,21 +109,24 @@ export class SurvivalUi {
     svg.setAttribute("viewBox", "0 0 60 120");
     svg.setAttribute("width", "72");
     svg.setAttribute("height", "144");
-    const part = (tag: string, a: Record<string, string>): void => {
+    const part = (tag: string, bp: BodyPart, a: Record<string, string>): void => {
       const p = document.createElementNS(NS, tag);
       for (const k in a) p.setAttribute(k, a[k]);
+      p.setAttribute("stroke-width", "2");
+      (p as SVGElement).style.cursor = "pointer";
+      p.addEventListener("click", () => this.selectPart(bp));
       svg.appendChild(p);
-      this.bodyParts.push(p);
+      this.partEls.push({ el: p, part: bp });
     };
-    part("circle", { cx: "30", cy: "14", r: "10" });
-    part("rect", { x: "16", y: "27", width: "28", height: "44", rx: "6" });
-    part("rect", { x: "4", y: "29", width: "10", height: "40", rx: "5" });
-    part("rect", { x: "46", y: "29", width: "10", height: "40", rx: "5" });
-    part("rect", { x: "17", y: "73", width: "11", height: "44", rx: "5" });
-    part("rect", { x: "32", y: "73", width: "11", height: "44", rx: "5" });
+    part("circle", "head", { cx: "30", cy: "14", r: "10" });
+    part("rect", "torso", { x: "16", y: "27", width: "28", height: "44", rx: "6" });
+    part("rect", "arms", { x: "4", y: "29", width: "10", height: "40", rx: "5" });
+    part("rect", "arms", { x: "46", y: "29", width: "10", height: "40", rx: "5" });
+    part("rect", "legs", { x: "17", y: "73", width: "11", height: "44", rx: "5" });
+    part("rect", "legs", { x: "32", y: "73", width: "11", height: "44", rx: "5" });
     left.appendChild(svg);
     this.bodyLabel = el("div", { fontSize: "11px", fontWeight: "bold", marginTop: "2px" }, left);
-    el("div", { color: C.dim, fontSize: "9px", marginTop: "3px" }, left, "A cor mostra sua vida geral.");
+    el("div", { color: C.dim, fontSize: "9px", marginTop: "3px" }, left, "Cada parte tem sua cor. Toque numa parte para tratar so ela.");
 
     const right = el("div", { flex: "1 1 190px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }, row);
     for (const a of ATTRS) {
@@ -133,6 +143,11 @@ export class SurvivalUi {
     }
     this.weaponLine = el("div", { color: C.warn }, right);
     this.warn = el("div", { color: C.bad, fontSize: "11px" }, right);
+    // Ferimentos: o servidor manda a lista pronta; aqui so mostra e devolve a parte escolhida
+    this.painLine = el("div", { fontSize: "11px", color: C.warn }, right);
+    this.targetLine = el("div", { fontSize: "10px", color: C.dim }, right);
+    this.injList = el("div", { display: "flex", flexDirection: "column", gap: "4px" }, right);
+    this.renderTarget();
   }
 
   setState(s: PlayerStateMsg): void {
@@ -146,7 +161,14 @@ export class SurvivalUi {
     }
     const hp = s.health;
     const col = hp < 30 ? "#b5483f" : hp < 60 ? "#b8913f" : "#5e8f58";
-    for (const p of this.bodyParts) p.setAttribute("fill", col);
+    const body = s.body ?? [100, 100, 100, 100]; // [cabeca, tronco, bracos, pernas]
+    const partIdx: Record<BodyPart, number> = { head: 0, torso: 1, arms: 2, legs: 3 };
+    for (const p of this.partEls) {
+      const c = body[partIdx[p.part]] ?? 100;
+      p.el.setAttribute("fill", c < 40 ? "#b5483f" : c < 75 ? "#b8913f" : "#5e8f58");
+      p.el.setAttribute("stroke", this.selPart === p.part ? "#ffffff" : "none");
+    }
+    this.setInjuries(s);
     this.bodyLabel.textContent = hp < 30 ? "Critico" : hp < 60 ? "Ferido" : "Saudavel";
     this.bodyLabel.style.color = col;
     const msgs: string[] = [];
@@ -174,6 +196,80 @@ export class SurvivalUi {
       this.death.style.display = "none";
       this.sv.lock(false);
     }
+  }
+
+  // ---------- FERIMENTOS ----------
+  private selectPart(p: BodyPart): void {
+    this.selPart = this.selPart === p ? null : p;
+    this.injKey = "";
+    this.renderTarget();
+    this.renderInjuries();
+    for (const e of this.partEls) e.el.setAttribute("stroke", this.selPart === e.part ? "#ffffff" : "none");
+  }
+
+  private renderTarget(): void {
+    this.targetLine.textContent = this.selPart ? `Tratando: ${PART_NAME[this.selPart]} (toque de novo para automatico)` : "Tratamento automatico: a ferida mais urgente.";
+  }
+
+  private setInjuries(s: PlayerStateMsg): void {
+    const list = s.injuries ?? [];
+    this.lastInjuries = list;
+    if (this.selPart && !list.some((i) => i.part === this.selPart)) {
+      this.selPart = null; // a parte sarou: volta ao automatico
+      this.renderTarget();
+    }
+    this.painLine.textContent = s.pain > 0 || s.painkiller ? `Dor: ${s.pain}%${s.painkiller ? " (analgesico ativo)" : ""}${s.bleeding > 0 ? `  |  Sangrando: -${s.bleeding} vida/s` : ""}` : s.bleeding > 0 ? `Sangrando: -${s.bleeding} vida/s` : "";
+    this.renderInjuries();
+    this.renderStatus(s);
+  }
+
+  private hint(i: InjuryView): string {
+    if (i.infected) return "Use Antibiotico.";
+    if (i.bleed > 0) return i.sev === 1 ? "Use Curativo ou Bandagem." : "Use Bandagem.";
+    if (i.kind === "fracture") return i.care < 2 ? "Use Tala." : "Descanse para curar mais rapido.";
+    if (i.kind === "bruise") return "Cura sozinha com o tempo.";
+    return i.care === 0 ? "Cubra com Curativo ou Bandagem." : "Descanse e mantenha fome/sede em dia.";
+  }
+
+  private renderInjuries(): void {
+    const list = this.lastInjuries;
+    const key = `${this.selPart}|${list.map((i) => `${i.id}.${i.sev}.${i.care}.${i.infected ? 1 : 0}.${i.infection}.${i.heal}.${i.bleed}`).join(",")}`;
+    if (key === this.injKey) return;
+    this.injKey = key;
+    this.injList.textContent = "";
+    if (list.length === 0) return void el("div", { color: C.ok, fontSize: "11px" }, this.injList, "Sem ferimentos.");
+    for (const i of list) {
+      const row = el("div", { background: this.selPart === i.part ? C.bg3 : C.bg2, border: `1px solid ${this.selPart === i.part ? C.lineHi : C.line}`, borderRadius: "3px", padding: "5px", cursor: "pointer" }, this.injList);
+      row.onclick = (): void => this.selectPart(i.part);
+      el("div", { fontWeight: "bold", fontSize: "11px", color: i.sev === 3 ? C.bad : i.sev === 2 ? C.warn : C.text }, row, `${KIND_NAME[i.kind]} ${SEV_NAME[i.sev - 1]} - ${PART_NAME[i.part]}`);
+      const tags: string[] = [];
+      if (i.bleed > 0) tags.push(`SANGRANDO -${i.bleed}/s`);
+      if (i.infected) tags.push("INFECTADO (nao cicatriza)");
+      else if (i.infection >= 20) tags.push(`risco de infeccao ${i.infection}%`);
+      tags.push(i.care === 2 ? "imobilizada" : i.care === 1 ? "coberta" : i.kind === "bruise" ? "sem curativo necessario" : "sem tratamento");
+      if (!i.infected) tags.push(`cicatrizando ${i.heal}%`);
+      el("div", { fontSize: "10px", color: i.bleed > 0 || i.infected ? C.bad : C.dim }, row, tags.join(" | "));
+      el("div", { fontSize: "10px", color: C.dim }, row, this.hint(i));
+    }
+  }
+
+  // Faixa sempre visivel (fora do painel) com os avisos de ferimento mais importantes.
+  private renderStatus(s: PlayerStateMsg): void {
+    if (!this.statusBar) {
+      this.statusBar = el("div", { position: "absolute", left: "50%", bottom: "64px", transform: "translateX(-50%)", display: "flex", gap: "4px", pointerEvents: "none", font: "bold 11px monospace" }, this.root);
+    }
+    const list = s.injuries ?? [];
+    const tags: [string, string][] = [];
+    if (s.bleeding > 0) tags.push(["🩸 Sangrando", C.bad]);
+    if (list.some((i) => i.infected)) tags.push(["🦠 Infectado", C.bad]);
+    if (list.some((i) => i.kind === "fracture" && i.care < 2)) tags.push(["🦴 Fratura", C.warn]);
+    if (list.some((i) => i.kind === "burn")) tags.push(["🔥 Queimadura", C.warn]);
+    if (s.pain >= 30) tags.push([`😖 Dor ${s.pain}%`, C.warn]);
+    const key = tags.map((t) => t[0]).join("|");
+    if (key === this.statusBar.dataset.key) return;
+    this.statusBar.dataset.key = key;
+    this.statusBar.textContent = "";
+    for (const [label, color] of tags) el("span", { background: "rgba(14,17,14,0.85)", border: `1px solid ${color}`, color, borderRadius: "3px", padding: "2px 5px", whiteSpace: "nowrap" }, this.statusBar, label);
   }
 
   // ---------- INVENTARIO ----------
@@ -232,8 +328,8 @@ export class SurvivalUi {
       el("div", { color: C.dim, fontSize: "10px", margin: "2px 0 5px" }, d, `${CATEGORY_LABEL[def.category]} | peso ${def.weight} kg cada | pilha ate ${def.maxStack}`);
       el("div", { fontSize: "11px", marginBottom: "6px" }, d, describeItem(def));
     }
-    const usable = !!def && Object.keys(def.effects).length > 0;
-    const b = actionButton(usable ? "USAR / CONSUMIR 1" : "NAO CONSUMIVEL", () => this.onUse(this.selSlot), d);
+    const usable = !!def && (Object.keys(def.effects).length > 0 || !!def.medical);
+    const b = actionButton(usable ? "USAR / CONSUMIR 1" : "NAO CONSUMIVEL", () => this.onUse(this.selSlot, this.selPart ?? undefined), d);
     setEnabled(b, usable);
     const hint = usable ? (this.selSlot < 9 ? `Atalho: tecla ${this.selSlot + 1}` : "") : "Este item nao e usado direto: serve para fabricar, construir ou como equipamento.";
     if (hint) el("div", { color: C.dim, fontSize: "10px", marginTop: "4px" }, d, hint);
@@ -264,7 +360,7 @@ export class SurvivalUi {
         cell.appendChild(document.createTextNode(icon(s.id)));
         el("div", { position: "absolute", right: "2px", bottom: "0", fontSize: "9px", fontWeight: "bold" }, cell, String(s.qty));
         cell.title = itemName(s.id) + (i === wSlot ? " (arma em uso)" : "");
-        cell.onclick = (): void => this.onUse(i);
+        cell.onclick = (): void => this.onUse(i, this.selPart ?? undefined);
       }
     }
   }
