@@ -1,4 +1,4 @@
-import { DROP_TTL_MS, HARVEST_TOOL, NODE_RESPAWN_MS, TOOL_YIELD, type ItemId, type Slot } from "@worldzero/shared";
+import { DROP_TTL_MS, HARVEST_NEEDS, HARVEST_TOOL, NODE_RESPAWN_MS, TOOL_YIELD, type ItemId, type Slot } from "@worldzero/shared";
 import type { Services } from "./Services";
 import { C, actionButton, el, icon, itemName, setEnabled } from "./theme";
 
@@ -11,7 +11,7 @@ export interface NearbyNode {
   depleted: boolean; // o servidor avisou que esta esgotado
 }
 
-const SOURCE: Partial<Record<ItemId, string>> = { wood: "Arvores", stone: "Rochas das ruinas", scrap: "Sucata das ruinas" };
+const SOURCE: Partial<Record<ItemId, string>> = { wood: "Arvores", stone: "Rochas das ruinas", scrap: "Sucata das ruinas", clay: "Margem dos lagos", fiber: "Capim (todas as regioes)", plant: "Mato (planicie, floresta, lago)", fruit: "Arbustos (planicie e floresta)", mushroom: "Chao da floresta", herb: "Mato (planicie, floresta, lago)", components: "Entulho das ruinas" };
 
 export class CollectUi {
   onCollect: () => void = () => {};
@@ -58,13 +58,15 @@ export class CollectUi {
     const box = el("div", { padding: "8px", background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", marginBottom: "6px" }, b);
     const n = this.near;
     if (!n) {
-      el("div", { color: C.dim, fontSize: "11px" }, box, "Nenhum recurso ao alcance. Chegue bem perto de uma arvore ou de uma rocha das ruinas.");
+      el("div", { color: C.dim, fontSize: "11px" }, box, "Nenhum recurso ao alcance. Chegue bem perto de uma arvore, rocha, margem de lago ou planta do chao (capim, ervas, frutas, cogumelos).");
     } else {
       const tool = HARVEST_TOOL[n.item];
       const withTool = !!tool && this.has(tool);
       const yieldQty = withTool ? TOOL_YIELD : 1;
       el("div", { fontWeight: "bold", fontSize: "13px" }, box, `${icon(n.item)} ${itemName(n.item)}`);
       el("div", { fontSize: "11px", margin: "3px 0", color: C.dim }, box, `Fonte: ${SOURCE[n.item] ?? "recurso"} | recurso novo tem ate ${n.max} unidades`);
+      const need = HARVEST_NEEDS[n.item];
+      if (need) el("div", { fontSize: "11px", color: this.has(need) ? C.ok : C.bad }, box, `Exige ${itemName(need)} na mochila.`);
       el("div", { fontSize: "11px" }, box, `Rende ${yieldQty} por coleta${tool ? (withTool ? ` (voce tem ${itemName(tool)})` : ` (com ${itemName(tool)} rende ${TOOL_YIELD})`) : ""}.`);
       el("div", { fontSize: "11px", marginTop: "3px", color: n.depleted ? C.bad : C.ok }, box, n.depleted ? `Esgotado. Volta ao normal em ~${Math.round(NODE_RESPAWN_MS / 1000)}s sem ser tocado.` : "Disponivel para coletar.");
     }

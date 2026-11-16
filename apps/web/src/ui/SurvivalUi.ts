@@ -579,10 +579,13 @@ export class SurvivalUi {
     };
     for (const i of r.inputs) line(itemName(i.id), inv.count(i.id), i.qty);
     if (r.station) line(itemName(r.station), inv.count(r.station), 1, " (precisa estar na mochila)");
+    if (r.tool) line(itemName(r.tool), inv.count(r.tool), 1, " (ferramenta: gasta durabilidade)");
     el("div", { fontWeight: "bold", marginBottom: "4px" }, d, "3. RESULTADO");
     const res = el("div", { padding: "6px", background: C.bg2, border: `1px solid ${C.line}`, borderRadius: "3px", marginBottom: "6px" }, d);
     el("div", { fontWeight: "bold" }, res, `${icon(out.id)} ${out.name}  x${r.output.qty}`);
+    for (const x of r.extra ?? []) el("div", { fontSize: "11px" }, res, `+ ${icon(x.id)} ${itemName(x.id)}  x${x.qty}`); // 9.4: subprodutos
     el("div", { fontSize: "10px", color: C.dim, margin: "2px 0" }, res, `Tempo de fabricacao: ${(r.craftMs / 1000).toFixed(1)}s`);
+    if (r.fail) el("div", { fontSize: "10px", color: C.bad, margin: "2px 0" }, res, `Risco de rachar na queima: ${Math.round(r.fail.chance * 100)}% (perde os ingredientes e sobram cacos)`);
     el("div", { fontSize: "11px" }, res, describeItem(out));
     const can = lacks.length === 0;
     const b = actionButton("FABRICAR", () => this.onCraft(this.selRecipe), d);

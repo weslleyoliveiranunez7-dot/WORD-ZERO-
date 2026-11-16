@@ -60,7 +60,7 @@ export function searchBox(onInput: (q: string) => void, parent: HTMLElement): HT
 // Compara texto sem acento e sem maiuscula (pesquisa).
 export const norm = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-export const ITEM_ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏", workbench: "🛠️", axe: "🪓", pickaxe: "⛏️", spear: "🔱", torch: "🔥" };
+export const ITEM_ICON: Record<string, string> = { canned_food: "🥫", water_bottle: "💧", bandage: "🩹", energy_bar: "🍫", wood: "🪵", stone: "🪨", scrap: "🔩", raw_meat: "🥩", club: "🏏", workbench: "🛠️", axe: "🪓", pickaxe: "⛏️", spear: "🔱", torch: "🔥", knife: "🔪", butcher_table: "🥩", clean_rag: "🧻", deer_carcass: "🦌", hide: "🟤", leather: "🧶", fat: "🧈", bone: "🦴", sinew: "🧵", steak: "🥓", tainted_meat: "🤢", preserved_meat: "🍖", bone_spear: "🔱", clay: "🟫", raw_pot: "🏺", raw_brick: "🧱", dry_pot: "🏺", dry_brick: "🧱", brick: "🧱", clay_jar: "🏺", fine_jar: "🏺", shards: "🔸", kiln: "♨️", brick_kiln: "🏭", fiber: "🌾", plant: "🌱", fruit: "🍓", mushroom: "🍄", herb: "🌿", components: "🔌", sickle: "🌙" };
 export const icon = (id: string): string => ITEM_ICON[id] ?? "?";
 export const itemName = (id: string): string => ITEMS[id as ItemId]?.name ?? id;
 
