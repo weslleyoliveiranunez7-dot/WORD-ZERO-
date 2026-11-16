@@ -19,6 +19,7 @@ import {
   type Vec2,
   type WorldSnapshot,
 } from "@worldzero/shared";
+import { formatRemaining, type SeasonStatus, type SeasonUpdateMsg } from "@worldzero/shared";
 import { Hud } from "../ui/Hud";
 import { uiRoot } from "../ui/landscape";
 import { Minimap } from "../ui/Minimap";
@@ -57,6 +58,8 @@ export class GameScene extends Phaser.Scene {
   private minimap!: Minimap;
   // rede (so no modo online)
   private net?: NetClient;
+  private season?: { n: number; status: SeasonStatus; localEnd: number }; // Etapa 14: relogio da temporada (so mostra o que o servidor mandou)
+  private seasonEnding = false;
   private worldName = ""; // Etapa 13: servidor escolhido na lista (vazio = servidor padrao)
   private snaps = new SnapshotBuffer();
   private remotes = new Map<string, Phaser.GameObjects.Image>();
@@ -108,8 +111,25 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
-  create(data?: { online?: boolean; world?: WorldChoice }): void {
-    this.world = new ChunkedWorld();
+  // Etapa 14: relogio e alertas da temporada. Se o mapa que o cliente gerou nao e o da temporada do servidor (lista velha, wipe no meio),
+  // reinicia a cena UMA vez com a seed certa.
+  private onSeason(m: SeasonUpdateMsg, data?: { online?: boolean; world?: WorldChoice; seed?: number }): void {
+    if (m.seed !== this.world.seed && data?.seed !== m.seed) {
+      this.scene.restart({ online: true, world: data?.world, seed: m.seed });
+      return;
+    }
+    this.season = { n: m.n, status: m.status, localEnd: Date.now() + (m.endsAt - m.now) }; // tempo restante pelo relogio do servidor
+    if (m.alert !== undefined) this.buildUi?.showNotice(`Temporada ${m.n}: faltam ${formatRemaining(m.alert)} para o fim e o wipe`);
+    if (m.status !== "ACTIVE" && !this.seasonEnding) {
+      this.seasonEnding = true;
+      this.buildUi?.showNotice("A temporada acabou! O mundo sera reiniciado.");
+    }
+  }
+
+  create(data?: { online?: boolean; world?: WorldChoice; seed?: number }): void {
+    this.world = new ChunkedWorld(data?.seed ?? data?.world?.seed); // Etapa 14: o mapa e o da temporada do servidor (sem seed: mapa de teste)
+    this.season = undefined;
+    this.seasonEnding = false;
     this.pos = { ...this.world.spawn };
     this.syncChunks();
 
@@ -166,6 +186,7 @@ export class GameScene extends Phaser.Scene {
       this.worldName = data.world?.name ?? "";
       this.net = new NetClient(getServerUrl(), data.world);
       this.net.onSnapshot = (snap) => this.onSnapshot(snap);
+      this.net.onSeason = (m) => this.onSeason(m, data);
       this.survivalUi = new SurvivalUi();
       this.survivalUi.onUse = (slot) => this.net?.useItem(slot);
       this.survivalUi.onRespawn = () => this.net?.respawn();
@@ -396,7 +417,12 @@ export class GameScene extends Phaser.Scene {
       const cx = Math.floor(tx / CHUNK_SIZE);
       const cy = Math.floor(ty / CHUNK_SIZE);
       const net = this.net ? ` | ${this.worldName ? this.worldName + " " : ""}${this.net.status}${this.net.lastError ? " (" + this.net.lastError.slice(0, 40) + ")" : ""} ${this.remotes.size + (this.synced ? 1 : 0)} jog.` : "";
-      this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}`);
+      if (this.seasonEnding && this.net?.status === "desconectado") {
+        this.scene.start("ServerListScene", { notice: "A temporada acabou e o mundo foi reiniciado. Escolha onde jogar." }); // fim definitivo: volta para a lista
+        return;
+      }
+      const sea = this.season ? ` | T${this.season.n} ${this.season.status === "ACTIVE" ? formatRemaining(this.season.localEnd - Date.now()) : "ENCERRADA"}` : "";
+      this.hud.setText(`FPS ${fps} | tile ${tx},${ty} | chunk ${cx},${cy} | ${this.world.loadedCount} carregados${net}${sea}`);
       this.minimap.update(this.pos.x, this.pos.y);
       if (this.clockEl && this.dayNight) {
         const mins = this.dayNight.gameMinutes;

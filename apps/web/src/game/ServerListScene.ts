@@ -1,3 +1,4 @@
+import { formatRemaining } from "@worldzero/shared";
 import Phaser from "phaser";
 import type { WorldInfo, WorldStatus } from "@worldzero/shared";
 import { fetchServerList, getLastWorld } from "../net/serverUrl";
@@ -114,7 +115,7 @@ export class ServerListScene extends Phaser.Scene {
 
   private join(w: WorldInfo): void {
     if (w.status === "lotado") return;
-    this.scene.start("GameScene", { online: true, world: { id: w.id, name: w.name, roomId: w.roomId } });
+    this.scene.start("GameScene", { online: true, world: { id: w.id, name: w.name, roomId: w.roomId, seed: w.season?.seed } });
   }
 
   private continueLast(): void {
@@ -186,7 +187,7 @@ export class ServerListScene extends Phaser.Scene {
       const mine = w.id === this.last;
       const bg = this.add.rectangle(0, y, rowW, ROW_H, mine ? 0x24402a : 0x18201a).setOrigin(0, 0).setStrokeStyle(2, mine ? 0x6fcf6f : 0x2c3a2f);
       const name = this.add.text(12, y + 7, `${mine ? "★ " : ""}${w.name}`, { fontFamily: FONT, fontSize: "20px", color: full ? "#8a8f8a" : "#d8e6d0" });
-      const sub = this.add.text(12, y + 31, `${w.region.toUpperCase()}${mine ? "  -  ultimo servidor" : ""}`, { fontFamily: FONT, fontSize: "13px", color: "#8fa08f" });
+      const sub = this.add.text(12, y + 31, `${w.region.toUpperCase()}${mine ? "  -  ultimo servidor" : ""}${w.season ? (w.season.status === "ACTIVE" ? `  -  temporada ${w.season.n}: faltam ${formatRemaining(w.season.endsAt - w.season.now)}` : "  -  reiniciando...") : ""}`, { fontFamily: FONT, fontSize: "13px", color: "#8fa08f" });
       const count = this.add
         .text(rowW - 12, y + 7, `${w.players}/${w.capacity}`, { fontFamily: FONT, fontSize: "20px", color: full ? "#d96b6b" : "#d8e6d0" })
         .setOrigin(1, 0);
